@@ -15,6 +15,10 @@ namespace BasicMultiplayer
         private const string FallbackWorldResourcePath = "BasicMultiplayer/VoxelMultiplayerWorld";
         private const string ForestTrailVoxelResourcePath = "Worlds/HQForest/Voxels/Forest/HQ_VoxelForestTop";
         private const string ForestMarkerVoxelResourcePath = "Worlds/HQForest/Voxels/Forest/HQ_VoxelForestDirt";
+        private const float CameraYawDegreesPerSecond = 150f;
+        private const float CameraPitchDegreesPerSecond = 92f;
+        private const float MinCameraPitch = -38f;
+        private const float MaxCameraPitch = 42f;
 
         private enum CameraZoomMode
         {
@@ -29,7 +33,7 @@ namespace BasicMultiplayer
         [SerializeField] private bool cameraFollowsLocalPlayer = true;
         [SerializeField] private bool showCameraZoomButton = true;
         [SerializeField] private CameraZoomMode cameraZoomMode = CameraZoomMode.Far;
-        [SerializeField] private bool paintPlayerTrails = true;
+        [SerializeField] private bool paintPlayerTrails = false;
         [SerializeField] private int maxTrailCellsPerPlayer = 48;
 
         private readonly Dictionary<int, Vector3Int> _lastTrailCells = new();
@@ -38,6 +42,8 @@ namespace BasicMultiplayer
         private VoxelDefinition _trailVoxel;
         private VoxelDefinition _markerVoxel;
         private Vector3 _cameraForward = Vector3.forward;
+        private float _cameraYaw;
+        private float _cameraPitch = 6f;
         private bool _worldReady;
 
         public bool IsFirstPersonCamera => cameraZoomMode == CameraZoomMode.FirstPerson;
@@ -346,11 +352,12 @@ namespace BasicMultiplayer
                 return;
             }
 
-            UpdateCameraForward();
+            UpdateCameraLook();
 
             var groundY = GetSurfaceCell(localPlayer.Position).y;
             var focus = new Vector3(localPlayer.Position.x, groundY + 1.35f, localPlayer.Position.y);
             var forward = _cameraForward.sqrMagnitude > 0.001f ? _cameraForward.normalized : Vector3.forward;
+            var lookTarget = focus + Vector3.up * Mathf.Clamp(-_cameraPitch * 0.075f, -2f, 2f);
             var positionSpeed = 4f;
             var rotationSpeed = 6f;
             var targetFov = 58f;
@@ -361,7 +368,7 @@ namespace BasicMultiplayer
             {
                 case CameraZoomMode.Close:
                     desiredPosition = focus - forward * 3.75f + Vector3.up * 2.35f;
-                    desiredRotation = Quaternion.LookRotation((focus + Vector3.up * 0.25f) - desiredPosition, Vector3.up);
+                    desiredRotation = Quaternion.LookRotation((lookTarget + Vector3.up * 0.25f) - desiredPosition, Vector3.up);
                     targetFov = 62f;
                     positionSpeed = 7f;
                     rotationSpeed = 9f;
@@ -369,7 +376,7 @@ namespace BasicMultiplayer
 
                 case CameraZoomMode.FirstPerson:
                     desiredPosition = new Vector3(localPlayer.Position.x, groundY + 1.65f, localPlayer.Position.y) + forward * 0.18f;
-                    desiredRotation = Quaternion.LookRotation((forward + Vector3.down * 0.04f).normalized, Vector3.up);
+                    desiredRotation = Quaternion.Euler(_cameraPitch, _cameraYaw, 0f);
                     targetFov = 68f;
                     positionSpeed = 14f;
                     rotationSpeed = 14f;
@@ -377,7 +384,7 @@ namespace BasicMultiplayer
 
                 default:
                     desiredPosition = focus - forward * 13f + Vector3.up * 13f;
-                    desiredRotation = Quaternion.LookRotation(focus - desiredPosition, Vector3.up);
+                    desiredRotation = Quaternion.LookRotation(lookTarget - desiredPosition, Vector3.up);
                     break;
             }
 
@@ -386,20 +393,26 @@ namespace BasicMultiplayer
             camera.fieldOfView = Mathf.Lerp(camera.fieldOfView, targetFov, 8f * Time.deltaTime);
         }
 
-        private void UpdateCameraForward()
+        private void UpdateCameraLook()
         {
             if (client == null)
             {
                 return;
             }
 
-            var input = client.MoveInput;
-            var inputForward = new Vector3(input.x, 0f, input.y);
+            var look = client.LookInput;
 
-            if (inputForward.sqrMagnitude > 0.04f)
+            if (look.sqrMagnitude > 0.001f)
             {
-                _cameraForward = inputForward.normalized;
+                _cameraYaw = Mathf.Repeat(_cameraYaw + look.x * CameraYawDegreesPerSecond * Time.deltaTime, 360f);
+                _cameraPitch = Mathf.Clamp(
+                    _cameraPitch - look.y * CameraPitchDegreesPerSecond * Time.deltaTime,
+                    MinCameraPitch,
+                    MaxCameraPitch);
             }
+
+            _cameraForward = Quaternion.Euler(0f, _cameraYaw, 0f) * Vector3.forward;
+            client.MovementYawDegrees = _cameraYaw;
         }
 
         private void HandleCameraToggleInput()

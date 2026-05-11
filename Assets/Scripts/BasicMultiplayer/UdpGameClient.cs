@@ -19,13 +19,19 @@ namespace BasicMultiplayer
     {
         private const float InputSendRate = 30f;
         private const float ReconnectHelloInterval = 1f;
-        private const float JoystickRadiusPixels = 90f;
+        private const float JoystickRadiusPixels = 105f;
+        private const float LeftJoystickScreenMax = 0.48f;
+        private const float RightJoystickScreenMin = 0.52f;
+        private const float JoystickScreenMaxY = 0.58f;
+        private const int NoPointerId = -1;
+        private const int MousePointerId = -2;
 
         [SerializeField] private string serverHost = "dev.augmego.ca";
         [SerializeField] private int serverPort = 7777;
         [SerializeField] private string playerName = "Player";
         [SerializeField] private bool autoConnectOnStart = true;
         [SerializeField] private bool showConnectionOverlay = false;
+        [SerializeField] private bool showVirtualJoysticks = true;
 
         private readonly ConcurrentQueue<string> _incomingMessages = new();
         private readonly Dictionary<int, PlayerSnapshot> _players = new();
@@ -41,15 +47,21 @@ namespace BasicMultiplayer
         private int _localPlayerId;
         private string _status = "Disconnected";
         private Vector2 _moveInput;
-        private Vector2 _joystickOrigin;
-        private Vector2 _joystickCurrent;
-        private int _joystickTouchId = -1;
+        private Vector2 _lookInput;
+        private Vector2 _moveJoystickOrigin;
+        private Vector2 _moveJoystickCurrent;
+        private Vector2 _lookJoystickOrigin;
+        private Vector2 _lookJoystickCurrent;
+        private int _moveJoystickPointerId = NoPointerId;
+        private int _lookJoystickPointerId = NoPointerId;
         private bool _isRunning;
 
         public IReadOnlyDictionary<int, PlayerSnapshot> Players => _players;
         public int LocalPlayerId => _localPlayerId;
         public bool IsConnected => _udp != null;
         public Vector2 MoveInput => _moveInput;
+        public Vector2 LookInput => _lookInput;
+        public float MovementYawDegrees { get; set; }
 
         private void Start()
         {
@@ -64,7 +76,7 @@ namespace BasicMultiplayer
         private void Update()
         {
             DrainIncomingMessages();
-            _moveInput = ReadMoveInput();
+            ReadLocalInput();
 
             if (_udp == null)
             {
@@ -303,38 +315,204 @@ namespace BasicMultiplayer
             }
         }
 
-        private Vector2 ReadMoveInput()
+        private void ReadLocalInput()
         {
             var move = Vector2.zero;
+            var look = Vector2.zero;
 
 #if ENABLE_INPUT_SYSTEM
+            move += ReadKeyboardMoveInput();
+            ReadTouchJoystickInput(ref move, ref look);
+            ReadMouseJoystickInput(ref move, ref look);
+#elif ENABLE_LEGACY_INPUT_MANAGER
+            move += ReadLegacyKeyboardMoveInput();
+            ReadLegacyTouchJoystickInput(ref move, ref look);
+            ReadLegacyMouseJoystickInput(ref move, ref look);
+#endif
+
+            _moveInput = TransformMoveInput(Vector2.ClampMagnitude(move, 1f));
+            _lookInput = Vector2.ClampMagnitude(look, 1f);
+        }
+
+        private Vector2 TransformMoveInput(Vector2 input)
+        {
+            if (input.sqrMagnitude < 0.001f)
+            {
+                return Vector2.zero;
+            }
+
+            var yaw = MovementYawDegrees * Mathf.Deg2Rad;
+            var sin = Mathf.Sin(yaw);
+            var cos = Mathf.Cos(yaw);
+
+            return new Vector2(
+                input.x * cos + input.y * sin,
+                input.y * cos - input.x * sin);
+        }
+
+#if ENABLE_INPUT_SYSTEM
+        private static Vector2 ReadKeyboardMoveInput()
+        {
+            var move = Vector2.zero;
             var keyboard = Keyboard.current;
 
-            if (keyboard != null)
+            if (keyboard == null)
             {
-                if (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed)
+                return move;
+            }
+
+            if (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed)
+            {
+                move.x -= 1f;
+            }
+
+            if (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed)
+            {
+                move.x += 1f;
+            }
+
+            if (keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed)
+            {
+                move.y -= 1f;
+            }
+
+            if (keyboard.wKey.isPressed || keyboard.upArrowKey.isPressed)
+            {
+                move.y += 1f;
+            }
+
+            return move;
+        }
+
+        private void ReadTouchJoystickInput(ref Vector2 move, ref Vector2 look)
+        {
+            var touchscreen = Touchscreen.current;
+
+            if (touchscreen == null)
+            {
+                ResetTouchPointer(ref _moveJoystickPointerId);
+                ResetTouchPointer(ref _lookJoystickPointerId);
+                return;
+            }
+
+            UpdateTouchJoystick(
+                touchscreen,
+                rightSide: false,
+                ref _moveJoystickPointerId,
+                ref _moveJoystickOrigin,
+                ref _moveJoystickCurrent,
+                ref move);
+            UpdateTouchJoystick(
+                touchscreen,
+                rightSide: true,
+                ref _lookJoystickPointerId,
+                ref _lookJoystickOrigin,
+                ref _lookJoystickCurrent,
+                ref look);
+        }
+
+        private void UpdateTouchJoystick(
+            Touchscreen touchscreen,
+            bool rightSide,
+            ref int pointerId,
+            ref Vector2 origin,
+            ref Vector2 current,
+            ref Vector2 value)
+        {
+            if (pointerId >= 0)
+            {
+                foreach (var touch in touchscreen.touches)
                 {
-                    move.x -= 1f;
+                    if (!IsTouchPressed(touch) || touch.touchId.ReadValue() != pointerId)
+                    {
+                        continue;
+                    }
+
+                    current = touch.position.ReadValue();
+                    value += GetJoystickValue(origin, current);
+                    return;
                 }
 
-                if (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed)
+                pointerId = NoPointerId;
+            }
+
+            foreach (var touch in touchscreen.touches)
+            {
+                if (!IsTouchPressed(touch))
                 {
-                    move.x += 1f;
+                    continue;
                 }
 
-                if (keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed)
+                var position = touch.position.ReadValue();
+
+                if (!IsJoystickSide(position, rightSide))
                 {
-                    move.y -= 1f;
+                    continue;
                 }
 
-                if (keyboard.wKey.isPressed || keyboard.upArrowKey.isPressed)
+                pointerId = touch.touchId.ReadValue();
+                origin = position;
+                current = position;
+                return;
+            }
+        }
+
+        private void ReadMouseJoystickInput(ref Vector2 move, ref Vector2 look)
+        {
+            var mouse = Mouse.current;
+
+            if (mouse == null)
+            {
+                return;
+            }
+
+            var isPressed = mouse.leftButton.isPressed;
+
+            if (!isPressed)
+            {
+                ResetMousePointer(ref _moveJoystickPointerId);
+                ResetMousePointer(ref _lookJoystickPointerId);
+                return;
+            }
+
+            var position = mouse.position.ReadValue();
+
+            if (mouse.leftButton.wasPressedThisFrame)
+            {
+                if (IsJoystickSide(position, rightSide: true))
                 {
-                    move.y += 1f;
+                    BeginMouseJoystick(ref _lookJoystickPointerId, ref _lookJoystickOrigin, ref _lookJoystickCurrent, position);
+                }
+                else
+                {
+                    BeginMouseJoystick(ref _moveJoystickPointerId, ref _moveJoystickOrigin, ref _moveJoystickCurrent, position);
                 }
             }
 
-            move += ReadTouchJoystickInput();
-#elif ENABLE_LEGACY_INPUT_MANAGER
+            if (_moveJoystickPointerId == MousePointerId)
+            {
+                _moveJoystickCurrent = position;
+                move += GetJoystickValue(_moveJoystickOrigin, _moveJoystickCurrent);
+            }
+
+            if (_lookJoystickPointerId == MousePointerId)
+            {
+                _lookJoystickCurrent = position;
+                look += GetJoystickValue(_lookJoystickOrigin, _lookJoystickCurrent);
+            }
+        }
+
+        private static bool IsTouchPressed(TouchControl touch)
+        {
+            return touch.press.isPressed;
+        }
+#endif
+
+#if ENABLE_LEGACY_INPUT_MANAGER
+        private static Vector2 ReadLegacyKeyboardMoveInput()
+        {
+            var move = Vector2.zero;
+
             if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow))
             {
                 move.x -= 1f;
@@ -355,117 +533,164 @@ namespace BasicMultiplayer
                 move.y += 1f;
             }
 
-            move += ReadLegacyTouchJoystickInput();
-#endif
-
-            return Vector2.ClampMagnitude(move, 1f);
+            return move;
         }
 
-#if ENABLE_INPUT_SYSTEM
-        private Vector2 ReadTouchJoystickInput()
+        private void ReadLegacyTouchJoystickInput(ref Vector2 move, ref Vector2 look)
         {
-            var touchscreen = Touchscreen.current;
-
-            if (touchscreen == null)
-            {
-                _joystickTouchId = -1;
-                return Vector2.zero;
-            }
-
-            if (_joystickTouchId >= 0)
-            {
-                foreach (var touch in touchscreen.touches)
-                {
-                    if (!IsTouchPressed(touch) || touch.touchId.ReadValue() != _joystickTouchId)
-                    {
-                        continue;
-                    }
-
-                    _joystickCurrent = touch.position.ReadValue();
-                    return Vector2.ClampMagnitude((_joystickCurrent - _joystickOrigin) / JoystickRadiusPixels, 1f);
-                }
-            }
-
-            foreach (var touch in touchscreen.touches)
-            {
-                if (!IsTouchPressed(touch))
-                {
-                    continue;
-                }
-
-                var position = touch.position.ReadValue();
-
-                if (position.x > Screen.width * 0.62f)
-                {
-                    continue;
-                }
-
-                _joystickTouchId = touch.touchId.ReadValue();
-                _joystickOrigin = position;
-                _joystickCurrent = position;
-                return Vector2.zero;
-            }
-
-            _joystickTouchId = -1;
-            return Vector2.zero;
+            UpdateLegacyTouchJoystick(
+                rightSide: false,
+                ref _moveJoystickPointerId,
+                ref _moveJoystickOrigin,
+                ref _moveJoystickCurrent,
+                ref move);
+            UpdateLegacyTouchJoystick(
+                rightSide: true,
+                ref _lookJoystickPointerId,
+                ref _lookJoystickOrigin,
+                ref _lookJoystickCurrent,
+                ref look);
         }
 
-        private static bool IsTouchPressed(TouchControl touch)
+        private void UpdateLegacyTouchJoystick(
+            bool rightSide,
+            ref int pointerId,
+            ref Vector2 origin,
+            ref Vector2 current,
+            ref Vector2 value)
         {
-            return touch.press.isPressed;
-        }
-#endif
-
-#if ENABLE_LEGACY_INPUT_MANAGER
-        private Vector2 ReadLegacyTouchJoystickInput()
-        {
-            if (_joystickTouchId >= 0)
+            if (pointerId >= 0)
             {
                 for (var index = 0; index < Input.touchCount; index++)
                 {
                     var touch = Input.GetTouch(index);
 
-                    if (touch.fingerId != _joystickTouchId)
+                    if (touch.fingerId != pointerId)
                     {
                         continue;
                     }
 
                     if (touch.phase == TouchPhase.Ended || touch.phase == TouchPhase.Canceled)
                     {
-                        _joystickTouchId = -1;
-                        return Vector2.zero;
+                        pointerId = NoPointerId;
+                        return;
                     }
 
-                    _joystickCurrent = touch.position;
-                    return Vector2.ClampMagnitude((_joystickCurrent - _joystickOrigin) / JoystickRadiusPixels, 1f);
+                    current = touch.position;
+                    value += GetJoystickValue(origin, current);
+                    return;
                 }
+
+                pointerId = NoPointerId;
             }
 
             for (var index = 0; index < Input.touchCount; index++)
             {
                 var touch = Input.GetTouch(index);
 
-                if (touch.position.x > Screen.width * 0.62f)
+                if (touch.phase == TouchPhase.Ended
+                    || touch.phase == TouchPhase.Canceled
+                    || !IsJoystickSide(touch.position, rightSide))
                 {
                     continue;
                 }
 
-                _joystickTouchId = touch.fingerId;
-                _joystickOrigin = touch.position;
-                _joystickCurrent = touch.position;
-                return Vector2.zero;
+                pointerId = touch.fingerId;
+                origin = touch.position;
+                current = touch.position;
+                return;
+            }
+        }
+
+        private void ReadLegacyMouseJoystickInput(ref Vector2 move, ref Vector2 look)
+        {
+            if (!Input.GetMouseButton(0))
+            {
+                ResetMousePointer(ref _moveJoystickPointerId);
+                ResetMousePointer(ref _lookJoystickPointerId);
+                return;
             }
 
-            _joystickTouchId = -1;
-            return Vector2.zero;
+            var position = (Vector2)Input.mousePosition;
+
+            if (Input.GetMouseButtonDown(0))
+            {
+                if (IsJoystickSide(position, rightSide: true))
+                {
+                    BeginMouseJoystick(ref _lookJoystickPointerId, ref _lookJoystickOrigin, ref _lookJoystickCurrent, position);
+                }
+                else
+                {
+                    BeginMouseJoystick(ref _moveJoystickPointerId, ref _moveJoystickOrigin, ref _moveJoystickCurrent, position);
+                }
+            }
+
+            if (_moveJoystickPointerId == MousePointerId)
+            {
+                _moveJoystickCurrent = position;
+                move += GetJoystickValue(_moveJoystickOrigin, _moveJoystickCurrent);
+            }
+
+            if (_lookJoystickPointerId == MousePointerId)
+            {
+                _lookJoystickCurrent = position;
+                look += GetJoystickValue(_lookJoystickOrigin, _lookJoystickCurrent);
+            }
         }
 #endif
+
+        private static Vector2 GetJoystickValue(Vector2 origin, Vector2 current)
+        {
+            return Vector2.ClampMagnitude((current - origin) / JoystickRadiusPixels, 1f);
+        }
+
+        private static bool IsJoystickSide(Vector2 position, bool rightSide)
+        {
+            if (position.y > Screen.height * JoystickScreenMaxY)
+            {
+                return false;
+            }
+
+            if (rightSide)
+            {
+                return position.x >= Screen.width * RightJoystickScreenMin;
+            }
+
+            return position.x <= Screen.width * LeftJoystickScreenMax;
+        }
+
+        private static void BeginMouseJoystick(
+            ref int pointerId,
+            ref Vector2 origin,
+            ref Vector2 current,
+            Vector2 position)
+        {
+            pointerId = MousePointerId;
+            origin = position;
+            current = position;
+        }
+
+        private static void ResetMousePointer(ref int pointerId)
+        {
+            if (pointerId == MousePointerId)
+            {
+                pointerId = NoPointerId;
+            }
+        }
+
+        private static void ResetTouchPointer(ref int pointerId)
+        {
+            if (pointerId >= 0)
+            {
+                pointerId = NoPointerId;
+            }
+        }
 
         private void OnGUI()
         {
             if (!showConnectionOverlay)
             {
-                DrawJoystickDebug();
+                DrawVirtualJoysticks();
                 return;
             }
 
@@ -526,21 +751,59 @@ namespace BasicMultiplayer
 
             GUI.matrix = previousMatrix;
 
-            DrawJoystickDebug();
+            DrawVirtualJoysticks();
         }
 
-        private void DrawJoystickDebug()
+        private void DrawVirtualJoysticks()
         {
-            if (_joystickTouchId < 0)
+            if (!showVirtualJoysticks)
             {
                 return;
             }
 
-            var origin = new Vector2(_joystickOrigin.x, Screen.height - _joystickOrigin.y);
-            var current = new Vector2(_joystickCurrent.x, Screen.height - _joystickCurrent.y);
+            var previousColor = GUI.color;
 
-            GUI.Box(new Rect(origin.x - 48f, origin.y - 48f, 96f, 96f), string.Empty);
-            GUI.Box(new Rect(current.x - 24f, current.y - 24f, 48f, 48f), string.Empty);
+            DrawVirtualJoystick(
+                _moveJoystickPointerId,
+                _moveJoystickOrigin,
+                _moveJoystickCurrent,
+                new Vector2(Screen.width * 0.18f, Screen.height * 0.22f),
+                new Color(0.1f, 0.78f, 1f, 0.38f));
+            DrawVirtualJoystick(
+                _lookJoystickPointerId,
+                _lookJoystickOrigin,
+                _lookJoystickCurrent,
+                new Vector2(Screen.width * 0.82f, Screen.height * 0.22f),
+                new Color(1f, 0.78f, 0.18f, 0.38f));
+
+            GUI.color = previousColor;
+        }
+
+        private static void DrawVirtualJoystick(
+            int pointerId,
+            Vector2 activeOrigin,
+            Vector2 activeCurrent,
+            Vector2 idleOrigin,
+            Color color)
+        {
+            var isActive = pointerId != NoPointerId;
+            var origin = isActive ? activeOrigin : idleOrigin;
+            var current = isActive ? activeCurrent : idleOrigin;
+            var guiOrigin = ToGuiPosition(origin);
+            var guiCurrent = ToGuiPosition(current);
+            var baseSize = isActive ? 112f : 96f;
+            var knobSize = isActive ? 48f : 34f;
+
+            GUI.color = isActive ? color : new Color(color.r, color.g, color.b, 0.18f);
+            GUI.Box(new Rect(guiOrigin.x - baseSize * 0.5f, guiOrigin.y - baseSize * 0.5f, baseSize, baseSize), string.Empty);
+
+            GUI.color = isActive ? new Color(color.r, color.g, color.b, 0.72f) : new Color(color.r, color.g, color.b, 0.28f);
+            GUI.Box(new Rect(guiCurrent.x - knobSize * 0.5f, guiCurrent.y - knobSize * 0.5f, knobSize, knobSize), string.Empty);
+        }
+
+        private static Vector2 ToGuiPosition(Vector2 screenPosition)
+        {
+            return new Vector2(screenPosition.x, Screen.height - screenPosition.y);
         }
 
         private void ClearIncomingMessages()

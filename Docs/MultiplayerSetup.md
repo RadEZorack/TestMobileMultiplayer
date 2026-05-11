@@ -8,7 +8,7 @@ This project now has a deliberately small client/server multiplayer loop:
 
 The server is authoritative for player positions. Clients send only movement intent; the server simulates positions and broadcasts snapshots.
 
-When Voxel Play 3 is installed, the sample scene creates a runtime Voxel Play world. It now prefers the included `HQForest` world, enables trees/vegetation/clouds, places a small multiplayer marker glade on the terrain, and paints colored voxel trails from the same server snapshots so every connected client sees the same shared marks.
+When Voxel Play 3 is installed, the sample scene creates a runtime Voxel Play world. It now prefers the included `HQForest` world, enables trees/vegetation/clouds, and places a small multiplayer marker glade on the terrain.
 
 ## 1. Run the server locally
 
@@ -25,11 +25,11 @@ Leave that Terminal window open.
 1. Open `Assets/Scenes/SampleScene.unity`.
 2. Press Play.
 3. The client auto-connects to `dev.augmego.ca:7777`.
-4. Move with WASD or arrow keys.
+4. Drag the left half of the game view to move and the right half to turn the camera. WASD/arrow keys also work in the editor.
 
 The connection overlay is hidden by default. For manual host/port testing, enable `showConnectionOverlay` on the `UdpGameClient` component in the Inspector.
 
-Tap the `CAM` button, or press `C` in the editor, to cycle the camera from far chase to close chase to first person.
+Tap the `CAM` button, or press `C` in the editor, to cycle the camera from far chase to close chase to first person. Movement is camera-relative, so turning with the right joystick also changes the direction the left joystick considers forward.
 
 To test a second player, run another Unity editor instance, or make a standalone desktop build and connect both to `127.0.0.1`.
 
