@@ -49,7 +49,7 @@ namespace BasicMultiplayer
             var arena = GameObject.CreatePrimitive(PrimitiveType.Plane);
             arena.name = "Basic Multiplayer Arena";
             arena.transform.localScale = new Vector3(2f, 1f, 1.2f);
-            arena.GetComponent<Renderer>().sharedMaterial = CreateMaterial(new Color(0.18f, 0.25f, 0.2f));
+            arena.GetComponent<Renderer>().sharedMaterial = BasicMultiplayerMaterials.Create(new Color(0.18f, 0.25f, 0.2f));
 
             CreateWall("Top Wall", new Vector3(0f, 0.5f, 5.5f), new Vector3(20f, 1f, 0.25f));
             CreateWall("Bottom Wall", new Vector3(0f, 0.5f, -5.5f), new Vector3(20f, 1f, 0.25f));
@@ -63,14 +63,7 @@ namespace BasicMultiplayer
             wall.name = name;
             wall.transform.SetPositionAndRotation(position, Quaternion.identity);
             wall.transform.localScale = scale;
-            wall.GetComponent<Renderer>().sharedMaterial = CreateMaterial(new Color(0.32f, 0.34f, 0.36f));
-        }
-
-        private static Material CreateMaterial(Color color)
-        {
-            var material = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            material.color = color;
-            return material;
+            wall.GetComponent<Renderer>().sharedMaterial = BasicMultiplayerMaterials.Create(new Color(0.32f, 0.34f, 0.36f));
         }
     }
 }

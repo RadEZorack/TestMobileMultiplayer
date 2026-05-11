@@ -18,8 +18,8 @@ namespace BasicMultiplayer
                 client = GetComponent<UdpGameClient>();
             }
 
-            _localMaterial = CreateMaterial(new Color(0.1f, 0.75f, 1f));
-            _remoteMaterial = CreateMaterial(new Color(1f, 0.64f, 0.15f));
+            _localMaterial = BasicMultiplayerMaterials.Create(new Color(0.1f, 0.75f, 1f));
+            _remoteMaterial = BasicMultiplayerMaterials.Create(new Color(1f, 0.64f, 0.15f));
         }
 
         private void Update()
@@ -89,13 +89,6 @@ namespace BasicMultiplayer
             textMesh.color = Color.white;
 
             return avatar.transform;
-        }
-
-        private static Material CreateMaterial(Color color)
-        {
-            var material = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            material.color = color;
-            return material;
         }
     }
 }

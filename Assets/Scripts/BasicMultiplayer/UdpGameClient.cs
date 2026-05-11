@@ -444,46 +444,62 @@ namespace BasicMultiplayer
 
         private void OnGUI()
         {
-            var panelWidth = Mathf.Min(440f, Screen.width - 24f);
-            GUILayout.BeginArea(new Rect(12f, 12f, panelWidth, 178f), GUI.skin.box);
+            var previousMatrix = GUI.matrix;
+            var uiScale = GetUiScale();
+            var safeArea = Screen.safeArea;
+            var leftInset = safeArea.xMin / uiScale;
+            var topInset = (Screen.height - safeArea.yMax) / uiScale;
+            var left = Mathf.Max(12f, leftInset + 12f);
+            var top = Mathf.Max(12f, topInset + 12f);
+            var availableWidth = Mathf.Max(280f, (Screen.width / uiScale) - left - 12f);
+            var panelWidth = Mathf.Min(680f, availableWidth);
+
+            GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(uiScale, uiScale, 1f));
+
+            GUILayout.BeginArea(new Rect(left, top, panelWidth, 256f), GUI.skin.box);
             GUILayout.Label("UDP Multiplayer Prototype");
-            GUILayout.Label(_status);
+            GUILayout.Label(_status, GUILayout.Height(24f));
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Host", GUILayout.Width(48f));
-            serverHost = GUILayout.TextField(serverHost);
+            GUILayout.Label("Server IP", GUILayout.Width(76f), GUILayout.Height(42f));
+            serverHost = GUILayout.TextField(serverHost, GUILayout.ExpandWidth(true), GUILayout.Height(42f));
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Port", GUILayout.Width(48f));
-            var portText = GUILayout.TextField(serverPort.ToString(CultureInfo.InvariantCulture), GUILayout.Width(80f));
+            GUILayout.Label("Port", GUILayout.Width(48f), GUILayout.Height(42f));
+            var portText = GUILayout.TextField(
+                serverPort.ToString(CultureInfo.InvariantCulture),
+                GUILayout.Width(110f),
+                GUILayout.Height(42f));
 
             if (int.TryParse(portText, out var parsedPort))
             {
                 serverPort = Mathf.Clamp(parsedPort, 1, 65535);
             }
 
-            GUILayout.Label("Name", GUILayout.Width(48f));
-            playerName = GUILayout.TextField(playerName);
+            GUILayout.Label("Name", GUILayout.Width(52f), GUILayout.Height(42f));
+            playerName = GUILayout.TextField(playerName, GUILayout.ExpandWidth(true), GUILayout.Height(42f));
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
 
             if (_udp == null)
             {
-                if (GUILayout.Button("Connect", GUILayout.Height(42f)))
+                if (GUILayout.Button("Connect", GUILayout.Height(54f)))
                 {
                     Connect();
                 }
             }
-            else if (GUILayout.Button("Disconnect", GUILayout.Height(42f)))
+            else if (GUILayout.Button("Disconnect", GUILayout.Height(54f)))
             {
                 Disconnect();
             }
 
-            GUILayout.Label($"Players: {_players.Count}");
+            GUILayout.Label($"Players: {_players.Count}", GUILayout.Width(110f), GUILayout.Height(54f));
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
+
+            GUI.matrix = previousMatrix;
 
             DrawJoystickDebug();
         }
@@ -507,6 +523,15 @@ namespace BasicMultiplayer
             while (_incomingMessages.TryDequeue(out _))
             {
             }
+        }
+
+        private static float GetUiScale()
+        {
+#if UNITY_IOS || UNITY_ANDROID
+            return Mathf.Clamp(Mathf.Min(Screen.width, Screen.height) / 430f, 1.4f, 2.2f);
+#else
+            return 1f;
+#endif
         }
 
         private static string SanitizeToken(string value)
