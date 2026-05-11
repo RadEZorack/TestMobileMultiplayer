@@ -1,10 +1,13 @@
 using System.Collections.Generic;
 using UnityEngine;
+using VoxelPlay;
 
 namespace BasicMultiplayer
 {
     public sealed class PlayerWorldView : MonoBehaviour
     {
+        private const float AvatarCenterHeight = 0.75f;
+
         [SerializeField] private UdpGameClient client;
 
         private readonly Dictionary<int, Transform> _avatars = new();
@@ -43,8 +46,9 @@ namespace BasicMultiplayer
                     _avatars[id] = avatar;
                 }
 
-                var targetPosition = new Vector3(snapshot.Position.x, 0.8f, snapshot.Position.y);
+                var targetPosition = GetTargetPosition(snapshot.Position);
                 avatar.position = Vector3.Lerp(avatar.position, targetPosition, 18f * Time.deltaTime);
+                FaceLabelToCamera(avatar);
 
                 var renderer = avatar.GetComponentInChildren<Renderer>();
 
@@ -89,6 +93,36 @@ namespace BasicMultiplayer
             textMesh.color = Color.white;
 
             return avatar.transform;
+        }
+
+        private static Vector3 GetTargetPosition(Vector2 serverPosition)
+        {
+            var terrainHeight = 0f;
+            var environment = VoxelPlayEnvironment.instance;
+
+            if (environment != null && environment.initialized)
+            {
+                terrainHeight = environment.GetTerrainHeight(serverPosition.x, serverPosition.y, includeWater: false);
+            }
+
+            return new Vector3(serverPosition.x, terrainHeight + AvatarCenterHeight, serverPosition.y);
+        }
+
+        private static void FaceLabelToCamera(Transform avatar)
+        {
+            var camera = Camera.main;
+
+            if (camera == null)
+            {
+                return;
+            }
+
+            var label = avatar.Find("Label");
+
+            if (label != null)
+            {
+                label.rotation = Quaternion.LookRotation(label.position - camera.transform.position, Vector3.up);
+            }
         }
     }
 }

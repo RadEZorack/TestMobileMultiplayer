@@ -23,8 +23,8 @@ internal sealed class BasicUdpGameServer : IDisposable
 {
     private const float TickRate = 30f;
     private const float PlayerSpeed = 4.5f;
-    private const float ArenaHalfWidth = 9f;
-    private const float ArenaHalfHeight = 5f;
+    private const float ArenaHalfWidth = 24f;
+    private const float ArenaHalfHeight = 16f;
     private static readonly TimeSpan ClientTimeout = TimeSpan.FromSeconds(10);
 
     private readonly UdpClient _udp;
