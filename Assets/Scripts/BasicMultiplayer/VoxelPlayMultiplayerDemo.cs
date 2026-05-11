@@ -19,6 +19,11 @@ namespace BasicMultiplayer
         private const float CameraPitchDegreesPerSecond = 92f;
         private const float MinCameraPitch = -38f;
         private const float MaxCameraPitch = 42f;
+        private const float BlockActionButtonSize = 64f;
+        private const float BlockActionButtonGap = 10f;
+        private const float JoystickClickScreenMaxY = 0.58f;
+        private const float LeftJoystickClickScreenMaxX = 0.48f;
+        private const float RightJoystickClickScreenMinX = 0.52f;
 
         private enum CameraZoomMode
         {
@@ -32,6 +37,10 @@ namespace BasicMultiplayer
         [SerializeField] private bool useForestSavedGame = true;
         [SerializeField] private bool cameraFollowsLocalPlayer = true;
         [SerializeField] private bool showCameraZoomButton = true;
+        [SerializeField] private bool showBlockActionButtons = true;
+        [SerializeField] private bool showCenterCrosshair = true;
+        [SerializeField] private float blockInteractionDistance = 24f;
+        [SerializeField] private Color blockHighlightColor = new Color(1f, 0.88f, 0.18f, 0.8f);
         [SerializeField] private CameraZoomMode cameraZoomMode = CameraZoomMode.Far;
         [SerializeField] private bool paintPlayerTrails = false;
         [SerializeField] private int maxTrailCellsPerPlayer = 48;
@@ -45,6 +54,8 @@ namespace BasicMultiplayer
         private float _cameraYaw;
         private float _cameraPitch = 6f;
         private bool _worldReady;
+        private bool _hasTargetHit;
+        private VoxelHitInfo _targetHitInfo;
 
         public bool IsFirstPersonCamera => cameraZoomMode == CameraZoomMode.FirstPerson;
 
@@ -84,31 +95,53 @@ namespace BasicMultiplayer
             {
                 UpdateCameraFollow();
             }
+
+            UpdateBlockTarget();
+            HandleBlockMouseInput();
         }
 
         private void OnGUI()
         {
-            if (!showCameraZoomButton || !cameraFollowsLocalPlayer)
+            if ((!showCameraZoomButton || !cameraFollowsLocalPlayer) && !showBlockActionButtons && !showCenterCrosshair)
             {
                 return;
             }
 
             var previousMatrix = GUI.matrix;
+            var previousColor = GUI.color;
             var uiScale = GetUiScale();
-            var safeArea = Screen.safeArea;
-            var rightInset = (Screen.width - safeArea.xMax) / uiScale;
-            var topInset = (Screen.height - safeArea.yMax) / uiScale;
-            var size = 72f;
-            var left = Mathf.Max(12f, (Screen.width / uiScale) - rightInset - size - 12f);
-            var top = Mathf.Max(12f, topInset + 12f);
 
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(uiScale, uiScale, 1f));
 
-            if (GUI.Button(new Rect(left, top, size, size), GetCameraButtonLabel()))
+            if (showCameraZoomButton && cameraFollowsLocalPlayer)
             {
-                CycleCameraZoomMode();
+                if (GUI.Button(GetCameraButtonRect(uiScale), GetCameraButtonLabel()))
+                {
+                    CycleCameraZoomMode();
+                }
             }
 
+            if (showBlockActionButtons)
+            {
+                GetBlockActionButtonRects(uiScale, reserveCameraButton: showCameraZoomButton && cameraFollowsLocalPlayer, out var leftButton, out var rightButton);
+
+                if (GUI.Button(leftButton, "L"))
+                {
+                    RemoveTargetBlock();
+                }
+
+                if (GUI.Button(rightButton, "R"))
+                {
+                    PlaceTargetBlock();
+                }
+            }
+
+            if (showCenterCrosshair)
+            {
+                DrawCenterCrosshair(uiScale);
+            }
+
+            GUI.color = previousColor;
             GUI.matrix = previousMatrix;
         }
 
@@ -321,6 +354,131 @@ namespace BasicMultiplayer
             _environment.VoxelDestroy(position);
         }
 
+        private void UpdateBlockTarget()
+        {
+            if (_environment == null || !_environment.initialized)
+            {
+                _hasTargetHit = false;
+                return;
+            }
+
+            var camera = Camera.main;
+
+            if (camera == null)
+            {
+                _hasTargetHit = false;
+                _environment.ClearHighlight();
+                return;
+            }
+
+            var ray = camera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+            var hasHit = _environment.RayCast(
+                ray.origin,
+                ray.direction,
+                out var hitInfo,
+                blockInteractionDistance,
+                minOpaque: 1,
+                colliderTypes: ColliderTypes.OnlyVoxels,
+                createChunksIfNeeded: false,
+                microVoxels: false,
+                ignoreWater: IgnoreWaterOption.IgnoreWater);
+
+            _hasTargetHit = hasHit;
+            _targetHitInfo = hitInfo;
+
+            if (hasHit)
+            {
+                _environment.VoxelHighlight(ref _targetHitInfo, blockHighlightColor, edgeWidth: 0.02f, fadeAmplitude: 0.35f);
+            }
+            else
+            {
+                _environment.ClearHighlight();
+            }
+        }
+
+        private void HandleBlockMouseInput()
+        {
+            if (!_hasTargetHit)
+            {
+                return;
+            }
+
+#if ENABLE_INPUT_SYSTEM
+            var mouse = Mouse.current;
+
+            if (mouse != null)
+            {
+                var position = mouse.position.ReadValue();
+
+                if (mouse.leftButton.wasPressedThisFrame && IsWorldBlockClick(position, uiScale: GetUiScale()))
+                {
+                    RemoveTargetBlock();
+                }
+
+                if (mouse.rightButton.wasPressedThisFrame && IsWorldBlockClick(position, uiScale: GetUiScale()))
+                {
+                    PlaceTargetBlock();
+                }
+            }
+#elif ENABLE_LEGACY_INPUT_MANAGER
+            var position = (Vector2)Input.mousePosition;
+
+            if (Input.GetMouseButtonDown(0) && IsWorldBlockClick(position, uiScale: GetUiScale()))
+            {
+                RemoveTargetBlock();
+            }
+
+            if (Input.GetMouseButtonDown(1) && IsWorldBlockClick(position, uiScale: GetUiScale()))
+            {
+                PlaceTargetBlock();
+            }
+#endif
+        }
+
+        private void RemoveTargetBlock()
+        {
+            if (_environment == null || !_hasTargetHit)
+            {
+                return;
+            }
+
+            if (_environment.VoxelDestroy(_targetHitInfo.voxelCenter))
+            {
+                _hasTargetHit = false;
+                _environment.ClearHighlight();
+            }
+        }
+
+        private void PlaceTargetBlock()
+        {
+            if (_environment == null || !_hasTargetHit)
+            {
+                return;
+            }
+
+            var voxel = GetBuildVoxel();
+
+            if (voxel == null)
+            {
+                return;
+            }
+
+            var placePosition = _targetHitInfo.voxelCenter + _targetHitInfo.normal;
+
+            if (_environment.IsVoxelAtPosition(placePosition))
+            {
+                return;
+            }
+
+            _environment.VoxelPlace(placePosition, voxel);
+            UpdateBlockTarget();
+        }
+
+        private VoxelDefinition GetBuildVoxel()
+        {
+            return _markerVoxel != null ? _markerVoxel : _trailVoxel != null ? _trailVoxel : _environment.defaultVoxel;
+        }
+
         private Vector3Int GetSurfaceCell(Vector2 position)
         {
             return GetSurfaceCell(Mathf.RoundToInt(position.x), Mathf.RoundToInt(position.y));
@@ -450,6 +608,82 @@ namespace BasicMultiplayer
                 CameraZoomMode.FirstPerson => "CAM\n1P",
                 _ => "CAM\nFAR"
             };
+        }
+
+        private static Rect GetCameraButtonRect(float uiScale)
+        {
+            var safeArea = Screen.safeArea;
+            var rightInset = (Screen.width - safeArea.xMax) / uiScale;
+            var topInset = (Screen.height - safeArea.yMax) / uiScale;
+            var size = 72f;
+            var left = Mathf.Max(12f, (Screen.width / uiScale) - rightInset - size - 12f);
+            var top = Mathf.Max(12f, topInset + 12f);
+            return new Rect(left, top, size, size);
+        }
+
+        private static void GetBlockActionButtonRects(float uiScale, bool reserveCameraButton, out Rect leftButton, out Rect rightButton)
+        {
+            var safeArea = Screen.safeArea;
+            var screenWidth = Screen.width / uiScale;
+            var rightInset = (Screen.width - safeArea.xMax) / uiScale;
+            var topInset = (Screen.height - safeArea.yMax) / uiScale;
+            var top = Mathf.Max(12f, topInset + 12f);
+            var rightEdge = screenWidth - rightInset - 12f;
+
+            if (reserveCameraButton)
+            {
+                top = Mathf.Max(top, GetCameraButtonRect(uiScale).yMax + BlockActionButtonGap);
+            }
+
+            rightButton = new Rect(
+                rightEdge - BlockActionButtonSize,
+                top,
+                BlockActionButtonSize,
+                BlockActionButtonSize);
+            leftButton = new Rect(
+                rightButton.x - BlockActionButtonGap - BlockActionButtonSize,
+                top,
+                BlockActionButtonSize,
+                BlockActionButtonSize);
+        }
+
+        private bool IsWorldBlockClick(Vector2 screenPosition, float uiScale)
+        {
+            if (showBlockActionButtons && IsPointerOverBlockActionButtons(screenPosition, uiScale))
+            {
+                return false;
+            }
+
+            if (screenPosition.y <= Screen.height * JoystickClickScreenMaxY)
+            {
+                return screenPosition.x > Screen.width * LeftJoystickClickScreenMaxX
+                    && screenPosition.x < Screen.width * RightJoystickClickScreenMinX;
+            }
+
+            return true;
+        }
+
+        private bool IsPointerOverBlockActionButtons(Vector2 screenPosition, float uiScale)
+        {
+            GetBlockActionButtonRects(uiScale, reserveCameraButton: showCameraZoomButton && cameraFollowsLocalPlayer, out var leftButton, out var rightButton);
+            var guiPosition = new Vector2(screenPosition.x / uiScale, (Screen.height - screenPosition.y) / uiScale);
+            return leftButton.Contains(guiPosition) || rightButton.Contains(guiPosition);
+        }
+
+        private static void DrawCenterCrosshair(float uiScale)
+        {
+            var center = new Vector2(Screen.width / uiScale * 0.5f, Screen.height / uiScale * 0.5f);
+            var previousColor = GUI.color;
+
+            GUI.color = new Color(0f, 0f, 0f, 0.35f);
+            GUI.DrawTexture(new Rect(center.x - 10f, center.y - 1f, 20f, 2f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(center.x - 1f, center.y - 10f, 2f, 20f), Texture2D.whiteTexture);
+
+            GUI.color = new Color(1f, 1f, 1f, 0.62f);
+            GUI.DrawTexture(new Rect(center.x - 8f, center.y, 16f, 1f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(center.x, center.y - 8f, 1f, 16f), Texture2D.whiteTexture);
+
+            GUI.color = previousColor;
         }
 
         private static Color GetPlayerTrailColor(int playerId)
