@@ -28,7 +28,7 @@ internal sealed class BasicUdpGameServer : IDisposable
     private static readonly TimeSpan ClientTimeout = TimeSpan.FromSeconds(10);
 
     private readonly UdpClient _udp;
-    private readonly ConcurrentDictionary<string, Player> _playersByEndpoint = new();
+    private readonly ConcurrentDictionary<string, Player> _playersByClientKey = new();
     private int _nextPlayerId;
     private long _tick;
 
@@ -121,50 +121,85 @@ internal sealed class BasicUdpGameServer : IDisposable
         {
             case "HELLO":
                 var requestedName = parts.Length > 1 ? parts[1] : "Player";
-                var isNewPlayer = !_playersByEndpoint.ContainsKey(endpointKey);
-                var player = _playersByEndpoint.GetOrAdd(endpointKey, _ => CreatePlayer(endpoint, requestedName));
-                player.Endpoint = endpoint;
-                player.LastSeen = DateTimeOffset.UtcNow;
-                Send(player.Endpoint, $"WELCOME {player.Id} {TickRate.ToString("0", CultureInfo.InvariantCulture)}");
+                RegisterOrRefreshPlayer(endpointKey, endpoint, requestedName, sendWelcome: true);
+                break;
 
-                if (isNewPlayer)
+            case "HELLO2":
+                if (parts.Length < 2)
                 {
-                    Console.WriteLine($"Player {player.Id} joined from {endpoint}");
+                    return;
                 }
+
+                var helloClientKey = GetSessionKey(parts[1], endpointKey);
+                var requestedProtocolName = parts.Length > 2 ? parts[2] : "Player";
+                RegisterOrRefreshPlayer(helloClientKey, endpoint, requestedProtocolName, sendWelcome: true);
                 break;
 
             case "INPUT":
-                if (!_playersByEndpoint.TryGetValue(endpointKey, out var existingPlayer))
+                HandleInput(endpointKey, endpoint, parts, xIndex: 2, yIndex: 3);
+                break;
+
+            case "INPUT2":
+                if (parts.Length < 2)
                 {
-                    var latePlayer = _playersByEndpoint.GetOrAdd(endpointKey, _ => CreatePlayer(endpoint, "Player"));
-                    Send(latePlayer.Endpoint, $"WELCOME {latePlayer.Id} {TickRate.ToString("0", CultureInfo.InvariantCulture)}");
-                    existingPlayer = latePlayer;
+                    return;
                 }
 
-                existingPlayer.Endpoint = endpoint;
-                existingPlayer.LastSeen = DateTimeOffset.UtcNow;
-
-                if (parts.Length >= 4
-                    && float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var inputX)
-                    && float.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var inputY))
-                {
-                    var length = MathF.Sqrt(inputX * inputX + inputY * inputY);
-
-                    if (length > 1f)
-                    {
-                        inputX /= length;
-                        inputY /= length;
-                    }
-
-                    existingPlayer.InputX = inputX;
-                    existingPlayer.InputY = inputY;
-                }
-
+                var inputClientKey = GetSessionKey(parts[1], endpointKey);
+                HandleInput(inputClientKey, endpoint, parts, xIndex: 3, yIndex: 4);
                 break;
 
             case "PING":
                 Send(endpoint, "PONG");
                 break;
+        }
+    }
+
+    private Player RegisterOrRefreshPlayer(string clientKey, IPEndPoint endpoint, string requestedName, bool sendWelcome)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var isNewPlayer = !_playersByClientKey.ContainsKey(clientKey);
+        var player = _playersByClientKey.GetOrAdd(clientKey, _ => CreatePlayer(endpoint, requestedName));
+        var previousEndpoint = player.Endpoint;
+
+        player.Endpoint = endpoint;
+        player.LastSeen = now;
+
+        if (sendWelcome || isNewPlayer)
+        {
+            Send(player.Endpoint, $"WELCOME {player.Id} {TickRate.ToString("0", CultureInfo.InvariantCulture)}");
+        }
+
+        if (isNewPlayer)
+        {
+            Console.WriteLine($"Player {player.Id} joined from {endpoint}");
+        }
+        else if (!Equals(previousEndpoint, endpoint))
+        {
+            Console.WriteLine($"Player {player.Id} endpoint changed from {previousEndpoint} to {endpoint}");
+        }
+
+        return player;
+    }
+
+    private void HandleInput(string clientKey, IPEndPoint endpoint, string[] parts, int xIndex, int yIndex)
+    {
+        var existingPlayer = RegisterOrRefreshPlayer(clientKey, endpoint, "Player", sendWelcome: false);
+
+        if (parts.Length > yIndex
+            && float.TryParse(parts[xIndex], NumberStyles.Float, CultureInfo.InvariantCulture, out var inputX)
+            && float.TryParse(parts[yIndex], NumberStyles.Float, CultureInfo.InvariantCulture, out var inputY))
+        {
+            var length = MathF.Sqrt(inputX * inputX + inputY * inputY);
+
+            if (length > 1f)
+            {
+                inputX /= length;
+                inputY /= length;
+            }
+
+            existingPlayer.InputX = inputX;
+            existingPlayer.InputY = inputY;
         }
     }
 
@@ -186,11 +221,11 @@ internal sealed class BasicUdpGameServer : IDisposable
 
     private void Simulate(float deltaTime, DateTimeOffset now)
     {
-        foreach (var (endpointKey, player) in _playersByEndpoint)
+        foreach (var (clientKey, player) in _playersByClientKey)
         {
             if (now - player.LastSeen > ClientTimeout)
             {
-                _playersByEndpoint.TryRemove(endpointKey, out _);
+                _playersByClientKey.TryRemove(clientKey, out _);
                 Console.WriteLine($"Player {player.Id} timed out.");
                 continue;
             }
@@ -202,7 +237,7 @@ internal sealed class BasicUdpGameServer : IDisposable
 
     private void BroadcastSnapshot(DateTimeOffset now)
     {
-        var players = _playersByEndpoint.Values
+        var players = _playersByClientKey.Values
             .OrderBy(player => player.Id)
             .ToArray();
 
@@ -245,7 +280,40 @@ internal sealed class BasicUdpGameServer : IDisposable
 
     private static string GetEndpointKey(IPEndPoint endpoint)
     {
-        return $"{endpoint.Address}:{endpoint.Port}";
+        return $"endpoint:{endpoint.Address}:{endpoint.Port}";
+    }
+
+    private static string GetSessionKey(string sessionId, string fallbackKey)
+    {
+        var sanitizedSessionId = SanitizeSessionId(sessionId);
+        return sanitizedSessionId.Length == 0 ? fallbackKey : $"session:{sanitizedSessionId}";
+    }
+
+    private static string SanitizeSessionId(string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(64);
+
+        foreach (var character in sessionId.Trim())
+        {
+            if (!char.IsLetterOrDigit(character) && character != '-' && character != '_')
+            {
+                continue;
+            }
+
+            builder.Append(character);
+
+            if (builder.Length >= 64)
+            {
+                break;
+            }
+        }
+
+        return builder.ToString();
     }
 
     private static string SanitizeName(string name)

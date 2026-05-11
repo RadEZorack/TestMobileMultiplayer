@@ -21,7 +21,7 @@ namespace BasicMultiplayer
         private const float ReconnectHelloInterval = 1f;
         private const float JoystickRadiusPixels = 90f;
 
-        [SerializeField] private string serverHost = "127.0.0.1";
+        [SerializeField] private string serverHost = "dev.augmego.ca";
         [SerializeField] private int serverPort = 7777;
         [SerializeField] private string playerName = "Player";
         [SerializeField] private bool autoConnectOnStart = false;
@@ -29,6 +29,7 @@ namespace BasicMultiplayer
         private readonly ConcurrentQueue<string> _incomingMessages = new();
         private readonly Dictionary<int, PlayerSnapshot> _players = new();
         private readonly object _socketLock = new();
+        private readonly string _clientSessionId = Guid.NewGuid().ToString("N");
 
         private UdpClient _udp;
         private Thread _receiveThread;
@@ -75,7 +76,7 @@ namespace BasicMultiplayer
             if (_localPlayerId == 0 && _helloTimer >= ReconnectHelloInterval)
             {
                 _helloTimer = 0f;
-                Send($"HELLO {SanitizeToken(playerName)}");
+                SendHello();
             }
 
             if (_inputSendTimer >= 1f / InputSendRate)
@@ -104,22 +105,22 @@ namespace BasicMultiplayer
 
             try
             {
-                if (!IPAddress.TryParse(serverHost, out var address))
+                var host = NormalizeServerHost(serverHost);
+
+                if (string.IsNullOrEmpty(host))
                 {
-                    var addresses = Dns.GetHostAddresses(serverHost);
-
-                    if (addresses.Length == 0)
-                    {
-                        _status = $"Could not resolve {serverHost}";
-                        return;
-                    }
-
-                    address = addresses[0];
+                    _status = "Enter a server host";
+                    return;
                 }
 
-                _serverEndpoint = new IPEndPoint(address, serverPort);
-                _udp = new UdpClient();
-                _udp.Connect(_serverEndpoint);
+                if (!TryCreateConnectedUdpClient(host, serverPort, out var udp, out var endpoint, out var error))
+                {
+                    _status = error;
+                    return;
+                }
+
+                _serverEndpoint = endpoint;
+                _udp = udp;
                 _isRunning = true;
                 _localPlayerId = 0;
                 _players.Clear();
@@ -132,9 +133,9 @@ namespace BasicMultiplayer
                 };
                 _receiveThread.Start();
 
-                _status = $"Connecting to {_serverEndpoint}";
+                _status = $"Connecting to {host} ({_serverEndpoint.Address})";
                 _helloTimer = ReconnectHelloInterval;
-                Send($"HELLO {SanitizeToken(playerName)}");
+                SendHello();
             }
             catch (Exception exception) when (exception is SocketException
                 || exception is ArgumentException
@@ -169,7 +170,7 @@ namespace BasicMultiplayer
 
         private void ReceiveLoop()
         {
-            var remoteEndpoint = new IPEndPoint(IPAddress.Any, 0);
+            var remoteEndpoint = new IPEndPoint(GetAnyAddressForCurrentSocket(), 0);
 
             while (_isRunning)
             {
@@ -264,10 +265,16 @@ namespace BasicMultiplayer
         {
             Send(string.Format(
                 CultureInfo.InvariantCulture,
-                "INPUT {0} {1:0.###} {2:0.###}",
+                "INPUT2 {0} {1} {2:0.###} {3:0.###}",
+                _clientSessionId,
                 _inputSequence++,
                 input.x,
                 input.y));
+        }
+
+        private void SendHello()
+        {
+            Send($"HELLO2 {_clientSessionId} {SanitizeToken(playerName)}");
         }
 
         private void Send(string message)
@@ -280,7 +287,18 @@ namespace BasicMultiplayer
                 }
 
                 var bytes = Encoding.UTF8.GetBytes(message);
-                _udp.Send(bytes, bytes.Length);
+
+                try
+                {
+                    _udp.Send(bytes, bytes.Length);
+                }
+                catch (SocketException exception)
+                {
+                    _incomingMessages.Enqueue($"ERROR Send failed: {exception.Message}");
+                }
+                catch (ObjectDisposedException)
+                {
+                }
             }
         }
 
@@ -525,6 +543,119 @@ namespace BasicMultiplayer
             }
         }
 
+        private IPAddress GetAnyAddressForCurrentSocket()
+        {
+            return _serverEndpoint != null && _serverEndpoint.AddressFamily == AddressFamily.InterNetworkV6
+                ? IPAddress.IPv6Any
+                : IPAddress.Any;
+        }
+
+        private static bool TryCreateConnectedUdpClient(
+            string host,
+            int port,
+            out UdpClient udp,
+            out IPEndPoint endpoint,
+            out string error)
+        {
+            udp = null;
+            endpoint = null;
+            error = string.Empty;
+
+            if (!TryResolveAddresses(host, out var addresses, out error))
+            {
+                return false;
+            }
+
+            Exception lastException = null;
+
+            for (var index = 0; index < addresses.Count; index++)
+            {
+                var address = addresses[index];
+
+                try
+                {
+                    endpoint = new IPEndPoint(address, port);
+                    udp = new UdpClient(address.AddressFamily);
+                    udp.Connect(endpoint);
+                    return true;
+                }
+                catch (Exception exception) when (exception is SocketException
+                    || exception is ArgumentException
+                    || exception is ObjectDisposedException)
+                {
+                    lastException = exception;
+                    udp?.Close();
+                    udp?.Dispose();
+                    udp = null;
+                    endpoint = null;
+                }
+            }
+
+            error = lastException == null
+                ? $"Could not open UDP socket for {host}:{port}"
+                : $"Could not open UDP socket for {host}:{port}: {lastException.Message}";
+            return false;
+        }
+
+        private static bool TryResolveAddresses(string host, out List<IPAddress> addresses, out string error)
+        {
+            addresses = new List<IPAddress>();
+            error = string.Empty;
+
+            if (IPAddress.TryParse(host, out var literalAddress))
+            {
+                addresses.Add(literalAddress);
+                return true;
+            }
+
+            try
+            {
+                addresses.AddRange(Dns.GetHostAddresses(host));
+            }
+            catch (SocketException exception)
+            {
+                error = $"DNS failed for {host}: {exception.Message}";
+                return false;
+            }
+            catch (ArgumentException exception)
+            {
+                error = $"Invalid server host {host}: {exception.Message}";
+                return false;
+            }
+
+            addresses.RemoveAll(address => address.AddressFamily != AddressFamily.InterNetwork
+                && address.AddressFamily != AddressFamily.InterNetworkV6);
+            addresses.Sort(CompareAddressPreference);
+
+            if (addresses.Count == 0)
+            {
+                error = $"Could not resolve {host}";
+                return false;
+            }
+
+            return true;
+        }
+
+        private static int CompareAddressPreference(IPAddress left, IPAddress right)
+        {
+            return GetAddressPreference(left).CompareTo(GetAddressPreference(right));
+        }
+
+        private static int GetAddressPreference(IPAddress address)
+        {
+            if (address.AddressFamily == AddressFamily.InterNetwork)
+            {
+                return 0;
+            }
+
+            if (address.AddressFamily == AddressFamily.InterNetworkV6)
+            {
+                return 1;
+            }
+
+            return 2;
+        }
+
         private static float GetUiScale()
         {
 #if UNITY_IOS || UNITY_ANDROID
@@ -532,6 +663,23 @@ namespace BasicMultiplayer
 #else
             return 1f;
 #endif
+        }
+
+        private static string NormalizeServerHost(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var host = value.Trim();
+
+            if (Uri.TryCreate(host, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.Host))
+            {
+                host = uri.Host;
+            }
+
+            return host;
         }
 
         private static string SanitizeToken(string value)

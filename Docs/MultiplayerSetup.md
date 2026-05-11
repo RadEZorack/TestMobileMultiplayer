@@ -29,6 +29,21 @@ Leave that Terminal window open.
 
 To test a second player, run another Unity editor instance, or make a standalone desktop build and connect both to `127.0.0.1`.
 
+## Optional nginx UDP front door
+
+The included `docker-compose.yml` exposes nginx on HTTP port `80` and UDP port `7777`. Because nginx owns public UDP `7777`, run the standalone game server on local UDP `7778` when testing through nginx:
+
+```sh
+dotnet run --project Server/BasicUdpGameServer -- 7778
+docker compose up -d
+```
+
+Then connect clients to `dev.augmego.ca` on port `7777`.
+
+Make sure `dev.augmego.ca` resolves on the device that is running the game. A Mac `/etc/hosts` entry only affects the Mac; an iPhone needs public DNS, router/local DNS, or a direct IP address in the game overlay.
+
+The client includes a session id in its UDP packets, and the server uses that id instead of the client's source port as the player key. This matters when traffic goes through nginx or NAT, because UDP proxy mappings can be recycled even while the game is still running.
+
 ## 3. Test on an iPhone over Wi-Fi
 
 1. Start the server on your Mac.
