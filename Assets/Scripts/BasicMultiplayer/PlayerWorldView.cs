@@ -9,6 +9,7 @@ namespace BasicMultiplayer
         private const float AvatarCenterHeight = 0.75f;
 
         [SerializeField] private UdpGameClient client;
+        [SerializeField] private VoxelPlayMultiplayerDemo voxelPlayDemo;
 
         private readonly Dictionary<int, Transform> _avatars = new();
         private Material _localMaterial;
@@ -19,6 +20,11 @@ namespace BasicMultiplayer
             if (client == null)
             {
                 client = GetComponent<UdpGameClient>();
+            }
+
+            if (voxelPlayDemo == null)
+            {
+                voxelPlayDemo = GetComponent<VoxelPlayMultiplayerDemo>();
             }
 
             _localMaterial = BasicMultiplayerMaterials.Create(new Color(0.1f, 0.75f, 1f));
@@ -49,10 +55,11 @@ namespace BasicMultiplayer
                 var targetPosition = GetTargetPosition(snapshot.Position);
                 avatar.position = Vector3.Lerp(avatar.position, targetPosition, 18f * Time.deltaTime);
                 FaceLabelToCamera(avatar);
+                SetAvatarVisible(avatar, !ShouldHideAvatar(id));
 
                 var renderer = avatar.GetComponentInChildren<Renderer>();
 
-                if (renderer != null)
+                if (renderer != null && renderer.enabled)
                 {
                     renderer.sharedMaterial = id == client.LocalPlayerId ? _localMaterial : _remoteMaterial;
                 }
@@ -93,6 +100,21 @@ namespace BasicMultiplayer
             textMesh.color = Color.white;
 
             return avatar.transform;
+        }
+
+        private bool ShouldHideAvatar(int playerId)
+        {
+            return playerId == client.LocalPlayerId
+                && voxelPlayDemo != null
+                && voxelPlayDemo.IsFirstPersonCamera;
+        }
+
+        private static void SetAvatarVisible(Transform avatar, bool isVisible)
+        {
+            foreach (var renderer in avatar.GetComponentsInChildren<Renderer>())
+            {
+                renderer.enabled = isVisible;
+            }
         }
 
         private static Vector3 GetTargetPosition(Vector2 serverPosition)

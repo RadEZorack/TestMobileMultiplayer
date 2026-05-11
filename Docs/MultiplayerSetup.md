@@ -24,8 +24,12 @@ Leave that Terminal window open.
 
 1. Open `Assets/Scenes/SampleScene.unity`.
 2. Press Play.
-3. Click `Connect` in the top-left overlay.
+3. The client auto-connects to `dev.augmego.ca:7777`.
 4. Move with WASD or arrow keys.
+
+The connection overlay is hidden by default. For manual host/port testing, enable `showConnectionOverlay` on the `UdpGameClient` component in the Inspector.
+
+Tap the `CAM` button, or press `C` in the editor, to cycle the camera from far chase to close chase to first person.
 
 To test a second player, run another Unity editor instance, or make a standalone desktop build and connect both to `127.0.0.1`.
 
@@ -55,8 +59,7 @@ ipconfig getifaddr en0
 
 3. Build the Unity project for iOS.
 4. Launch on the phone.
-5. In the overlay, set `Host` to your Mac LAN IP, not `127.0.0.1`.
-6. Tap `Connect`.
+5. The client auto-connects using the default host in `UdpGameClient`.
 
 Your iPhone and Mac need to be on the same Wi-Fi network, and your firewall must allow UDP port `7777`.
 

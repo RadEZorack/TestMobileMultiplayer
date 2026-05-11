@@ -3,6 +3,10 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using VoxelPlay;
 
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
+
 namespace BasicMultiplayer
 {
     public sealed class VoxelPlayMultiplayerDemo : MonoBehaviour
@@ -12,10 +16,19 @@ namespace BasicMultiplayer
         private const string ForestTrailVoxelResourcePath = "Worlds/HQForest/Voxels/Forest/HQ_VoxelForestTop";
         private const string ForestMarkerVoxelResourcePath = "Worlds/HQForest/Voxels/Forest/HQ_VoxelForestDirt";
 
+        private enum CameraZoomMode
+        {
+            Far,
+            Close,
+            FirstPerson
+        }
+
         [SerializeField] private UdpGameClient client;
         [SerializeField] private bool useHighQualityForestWorld = true;
         [SerializeField] private bool useForestSavedGame = true;
         [SerializeField] private bool cameraFollowsLocalPlayer = true;
+        [SerializeField] private bool showCameraZoomButton = true;
+        [SerializeField] private CameraZoomMode cameraZoomMode = CameraZoomMode.Far;
         [SerializeField] private bool paintPlayerTrails = true;
         [SerializeField] private int maxTrailCellsPerPlayer = 48;
 
@@ -24,7 +37,10 @@ namespace BasicMultiplayer
         private VoxelPlayEnvironment _environment;
         private VoxelDefinition _trailVoxel;
         private VoxelDefinition _markerVoxel;
+        private Vector3 _cameraForward = Vector3.forward;
         private bool _worldReady;
+
+        public bool IsFirstPersonCamera => cameraZoomMode == CameraZoomMode.FirstPerson;
 
         private void Awake()
         {
@@ -48,6 +64,8 @@ namespace BasicMultiplayer
                 return;
             }
 
+            HandleCameraToggleInput();
+
             if (paintPlayerTrails)
             {
                 foreach (var pair in client.Players)
@@ -60,6 +78,32 @@ namespace BasicMultiplayer
             {
                 UpdateCameraFollow();
             }
+        }
+
+        private void OnGUI()
+        {
+            if (!showCameraZoomButton || !cameraFollowsLocalPlayer)
+            {
+                return;
+            }
+
+            var previousMatrix = GUI.matrix;
+            var uiScale = GetUiScale();
+            var safeArea = Screen.safeArea;
+            var rightInset = (Screen.width - safeArea.xMax) / uiScale;
+            var topInset = (Screen.height - safeArea.yMax) / uiScale;
+            var size = 72f;
+            var left = Mathf.Max(12f, (Screen.width / uiScale) - rightInset - size - 12f);
+            var top = Mathf.Max(12f, topInset + 12f);
+
+            GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(uiScale, uiScale, 1f));
+
+            if (GUI.Button(new Rect(left, top, size, size), GetCameraButtonLabel()))
+            {
+                CycleCameraZoomMode();
+            }
+
+            GUI.matrix = previousMatrix;
         }
 
         private void CreateVoxelPlayEnvironment()
@@ -302,14 +346,97 @@ namespace BasicMultiplayer
                 return;
             }
 
+            UpdateCameraForward();
+
             var groundY = GetSurfaceCell(localPlayer.Position).y;
-            var focus = new Vector3(localPlayer.Position.x, groundY + 1.3f, localPlayer.Position.y);
-            var desiredPosition = focus + new Vector3(0f, 13f, -13f);
-            camera.transform.position = Vector3.Lerp(camera.transform.position, desiredPosition, 4f * Time.deltaTime);
-            camera.transform.rotation = Quaternion.Slerp(
-                camera.transform.rotation,
-                Quaternion.LookRotation(focus - camera.transform.position, Vector3.up),
-                6f * Time.deltaTime);
+            var focus = new Vector3(localPlayer.Position.x, groundY + 1.35f, localPlayer.Position.y);
+            var forward = _cameraForward.sqrMagnitude > 0.001f ? _cameraForward.normalized : Vector3.forward;
+            var positionSpeed = 4f;
+            var rotationSpeed = 6f;
+            var targetFov = 58f;
+            Vector3 desiredPosition;
+            Quaternion desiredRotation;
+
+            switch (cameraZoomMode)
+            {
+                case CameraZoomMode.Close:
+                    desiredPosition = focus - forward * 3.75f + Vector3.up * 2.35f;
+                    desiredRotation = Quaternion.LookRotation((focus + Vector3.up * 0.25f) - desiredPosition, Vector3.up);
+                    targetFov = 62f;
+                    positionSpeed = 7f;
+                    rotationSpeed = 9f;
+                    break;
+
+                case CameraZoomMode.FirstPerson:
+                    desiredPosition = new Vector3(localPlayer.Position.x, groundY + 1.65f, localPlayer.Position.y) + forward * 0.18f;
+                    desiredRotation = Quaternion.LookRotation((forward + Vector3.down * 0.04f).normalized, Vector3.up);
+                    targetFov = 68f;
+                    positionSpeed = 14f;
+                    rotationSpeed = 14f;
+                    break;
+
+                default:
+                    desiredPosition = focus - forward * 13f + Vector3.up * 13f;
+                    desiredRotation = Quaternion.LookRotation(focus - desiredPosition, Vector3.up);
+                    break;
+            }
+
+            camera.transform.position = Vector3.Lerp(camera.transform.position, desiredPosition, positionSpeed * Time.deltaTime);
+            camera.transform.rotation = Quaternion.Slerp(camera.transform.rotation, desiredRotation, rotationSpeed * Time.deltaTime);
+            camera.fieldOfView = Mathf.Lerp(camera.fieldOfView, targetFov, 8f * Time.deltaTime);
+        }
+
+        private void UpdateCameraForward()
+        {
+            if (client == null)
+            {
+                return;
+            }
+
+            var input = client.MoveInput;
+            var inputForward = new Vector3(input.x, 0f, input.y);
+
+            if (inputForward.sqrMagnitude > 0.04f)
+            {
+                _cameraForward = inputForward.normalized;
+            }
+        }
+
+        private void HandleCameraToggleInput()
+        {
+#if ENABLE_INPUT_SYSTEM
+            var keyboard = Keyboard.current;
+
+            if (keyboard != null && keyboard.cKey.wasPressedThisFrame)
+            {
+                CycleCameraZoomMode();
+            }
+#elif ENABLE_LEGACY_INPUT_MANAGER
+            if (Input.GetKeyDown(KeyCode.C))
+            {
+                CycleCameraZoomMode();
+            }
+#endif
+        }
+
+        private void CycleCameraZoomMode()
+        {
+            cameraZoomMode = cameraZoomMode switch
+            {
+                CameraZoomMode.Far => CameraZoomMode.Close,
+                CameraZoomMode.Close => CameraZoomMode.FirstPerson,
+                _ => CameraZoomMode.Far
+            };
+        }
+
+        private string GetCameraButtonLabel()
+        {
+            return cameraZoomMode switch
+            {
+                CameraZoomMode.Close => "CAM\n3M",
+                CameraZoomMode.FirstPerson => "CAM\n1P",
+                _ => "CAM\nFAR"
+            };
         }
 
         private static Color GetPlayerTrailColor(int playerId)
@@ -423,6 +550,15 @@ namespace BasicMultiplayer
                 new Vector3(0f, 3f, 0f),
                 Quaternion.Euler(60f, 0.085f, -18.493f));
             return sun;
+        }
+
+        private static float GetUiScale()
+        {
+#if UNITY_IOS || UNITY_ANDROID
+            return Mathf.Clamp(Mathf.Min(Screen.width, Screen.height) / 430f, 1.4f, 2.2f);
+#else
+            return 1f;
+#endif
         }
     }
 }

@@ -24,7 +24,8 @@ namespace BasicMultiplayer
         [SerializeField] private string serverHost = "dev.augmego.ca";
         [SerializeField] private int serverPort = 7777;
         [SerializeField] private string playerName = "Player";
-        [SerializeField] private bool autoConnectOnStart = false;
+        [SerializeField] private bool autoConnectOnStart = true;
+        [SerializeField] private bool showConnectionOverlay = false;
 
         private readonly ConcurrentQueue<string> _incomingMessages = new();
         private readonly Dictionary<int, PlayerSnapshot> _players = new();
@@ -54,7 +55,7 @@ namespace BasicMultiplayer
         {
             Application.runInBackground = true;
 
-            if (autoConnectOnStart)
+            if (autoConnectOnStart || !showConnectionOverlay)
             {
                 Connect();
             }
@@ -462,6 +463,12 @@ namespace BasicMultiplayer
 
         private void OnGUI()
         {
+            if (!showConnectionOverlay)
+            {
+                DrawJoystickDebug();
+                return;
+            }
+
             var previousMatrix = GUI.matrix;
             var uiScale = GetUiScale();
             var safeArea = Screen.safeArea;
