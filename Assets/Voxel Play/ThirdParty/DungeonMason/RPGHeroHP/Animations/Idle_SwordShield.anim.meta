@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: cce17be549d0ed844b495457cb439221
+timeCreated: 1529752718
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/ThirdParty/DungeonMason/RPGHeroHP/Animations/Idle_SwordShield.anim
+  uploadId: 910580

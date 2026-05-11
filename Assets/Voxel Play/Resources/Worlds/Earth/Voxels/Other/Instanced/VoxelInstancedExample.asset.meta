@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 0bf05aabe4d5641d691c72fc7a5ab79e
+timeCreated: 1543531477
+licenseType: Store
+NativeFormatImporter:
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Voxels/Other/Instanced/VoxelInstancedExample.asset
+  uploadId: 910580

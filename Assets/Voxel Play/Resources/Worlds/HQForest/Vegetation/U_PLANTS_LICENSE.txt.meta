@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 97d2ec1ab60304ccf8f468f0dd026ea5
+timeCreated: 1542055528
+licenseType: Store
+TextScriptImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/HQForest/Vegetation/U_PLANTS_LICENSE.txt
+  uploadId: 910580

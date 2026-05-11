@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 15b1277d1c165407693b5969f1023066
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPModelShadows.cginc
+  uploadId: 910580

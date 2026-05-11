@@ -1,0 +1,42 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d6d5d8e3721e240edb1241906352c93a, type: 3}
+  m_Name: Shotgun
+  m_EditorClassIdentifier: 
+  title: shotgun
+  category: 10
+  voxelType: {fileID: 0}
+  model: {fileID: 0}
+  icon: {fileID: 2800000, guid: 4958fa53c49b74cdca0b9799d778fdf0, type: 3}
+  iconPrefab: {fileID: 0}
+  color:
+    serializedVersion: 2
+    rgba: 4294967295
+  prefab: {fileID: 8450818016717207392, guid: de8e91e93f3674377bbbd6b16f724cfe, type: 3}
+  prefab2: {fileID: 0}
+  prefab3: {fileID: 0}
+  useSound: {fileID: 8300000, guid: d76370886d5da4c839b54219982b94cf, type: 3}
+  canBePicked: 1
+  pickMode: 0
+  pickupSound: {fileID: 0}
+  properties:
+  - name: hitDamage
+    value: 7
+  - name: hitDelay
+    value: 0.25
+  - name: hitRange
+    value: 20
+  - name: microVoxels
+    value: 6
+  - name: microVoxelsProb
+    value: 0.2
+  lightIntensity: 15

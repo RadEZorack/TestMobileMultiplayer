@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: a3d18d8e0a6f4cb1a7793a08ea2f4701
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Scripts/Private/ScriptableObjects/TerrainGraphStepRuntime.cs
+  uploadId: 910580

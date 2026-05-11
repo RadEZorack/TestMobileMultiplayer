@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: c8609a9c59a175645b358f5b0e72c6eb
+timeCreated: 1529753150
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/ThirdParty/DungeonMason/RPGHeroHP/Materials/Costume.mat
+  uploadId: 910580

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 362f95d1e623f4d5794a3d3099e11328
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPCommon.cginc
+  uploadId: 910580

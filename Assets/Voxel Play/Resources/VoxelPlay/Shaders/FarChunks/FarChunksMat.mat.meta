@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 5b6346e8d56cf4435ad1ba66b42d0fea
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/FarChunks/FarChunksMat.mat
+  uploadId: 910580

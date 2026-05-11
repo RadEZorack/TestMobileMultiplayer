@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 08fabd0abdee041a38f283aa2a52c03c
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPVoxelTriangleOpaqueAnimated.shader
+  uploadId: 910580

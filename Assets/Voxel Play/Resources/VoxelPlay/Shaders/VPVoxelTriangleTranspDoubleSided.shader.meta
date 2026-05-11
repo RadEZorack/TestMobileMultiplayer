@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 51f7a8caff9b94e6ead539b0be7a1565
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPVoxelTriangleTranspDoubleSided.shader
+  uploadId: 910580

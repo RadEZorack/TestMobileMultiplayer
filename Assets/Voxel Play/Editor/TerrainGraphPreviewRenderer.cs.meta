@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 0f88675ec4d784b23afb97a3df7facbe
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Editor/TerrainGraphPreviewRenderer.cs
+  uploadId: 910580

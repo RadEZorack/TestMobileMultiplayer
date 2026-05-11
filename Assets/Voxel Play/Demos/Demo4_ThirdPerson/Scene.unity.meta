@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 847ad6b7755e94799962285729f0c9e9
+timeCreated: 1505834283
+licenseType: Store
+DefaultImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Demos/Demo4_ThirdPerson/Scene.unity
+  uploadId: 910580

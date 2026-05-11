@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: af8e83698e8ad47bea9b5a7ce4280321
+timeCreated: 1509361177
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/EarthTestCompute/Biome.asset
+  uploadId: 910580

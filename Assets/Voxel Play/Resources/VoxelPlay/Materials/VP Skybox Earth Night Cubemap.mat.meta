@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 98bca48d59cbc48ed91aaed747b46909
+timeCreated: 1505146203
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Materials/VP Skybox Earth Night
+    Cubemap.mat
+  uploadId: 910580

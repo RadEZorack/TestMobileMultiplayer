@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 4cca237cc77de49589bf3e51ef15898e
+timeCreated: 1507972625
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Prefabs/VoxelHighlight.prefab
+  uploadId: 910580

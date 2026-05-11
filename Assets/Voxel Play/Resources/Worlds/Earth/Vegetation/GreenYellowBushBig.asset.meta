@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: d2a0fbd11f73c4198808e235747242e2
+timeCreated: 1510673587
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Vegetation/GreenYellowBushBig.asset
+  uploadId: 910580

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 20e5f0276c0cd48548720e1df45be65d
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPVoxelTriangleOpaqueWorldSpaceUV3Sides_Bumped.shader
+  uploadId: 910580

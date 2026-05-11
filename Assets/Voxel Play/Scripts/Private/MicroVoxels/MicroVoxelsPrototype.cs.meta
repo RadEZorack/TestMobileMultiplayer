@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 080993b9f2eb446dda595de8518524e7
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Scripts/Private/MicroVoxels/MicroVoxelsPrototype.cs
+  uploadId: 910580

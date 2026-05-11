@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: a040ea38086c74d1085b6c18587da7c9
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPModelTextureCutoutDoubleSided.shader
+  uploadId: 910580

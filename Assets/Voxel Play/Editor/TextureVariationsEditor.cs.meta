@@ -1,0 +1,19 @@
+fileFormatVersion: 2
+guid: b52c600b0bd934a98beb480d9e53936f
+timeCreated: 1513675946
+licenseType: Store
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Editor/TextureVariationsEditor.cs
+  uploadId: 910580

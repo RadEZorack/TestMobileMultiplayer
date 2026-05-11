@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: bc544ca6ae7774cf5bf95f90ba4fe483
+timeCreated: 1509363729
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/EarthNoHoles.asset
+  uploadId: 910580

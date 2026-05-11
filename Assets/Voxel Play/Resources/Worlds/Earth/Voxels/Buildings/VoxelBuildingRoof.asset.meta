@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 53bea8a98805248f392ddd8d89787431
+timeCreated: 1525944519
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Voxels/Buildings/VoxelBuildingRoof.asset
+  uploadId: 910580

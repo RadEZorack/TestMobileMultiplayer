@@ -8,6 +8,8 @@ This project now has a deliberately small client/server multiplayer loop:
 
 The server is authoritative for player positions. Clients send only movement intent; the server simulates positions and broadcasts snapshots.
 
+When Voxel Play 3 is installed, the sample scene also creates a small flat Voxel Play world at runtime. Each networked player paints a colored voxel trail from the same server snapshots, so every connected client sees the same shared voxel marks.
+
 ## 1. Run the server locally
 
 From the project root:

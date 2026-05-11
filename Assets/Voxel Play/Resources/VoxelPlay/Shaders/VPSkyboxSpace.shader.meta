@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 6b6d760acd85d436bba8214e70e98eb2
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPSkyboxSpace.shader
+  uploadId: 910580

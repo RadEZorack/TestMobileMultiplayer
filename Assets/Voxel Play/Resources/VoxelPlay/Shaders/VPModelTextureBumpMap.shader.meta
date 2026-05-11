@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 4d0f98422309148558d3f17be743b855
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPModelTextureBumpMap.shader
+  uploadId: 910580

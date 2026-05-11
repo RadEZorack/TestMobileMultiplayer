@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 9e4ad9f1762b6408c835d38c4f584938
+timeCreated: 1510673587
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Vegetation/ColorfulBush.asset
+  uploadId: 910580

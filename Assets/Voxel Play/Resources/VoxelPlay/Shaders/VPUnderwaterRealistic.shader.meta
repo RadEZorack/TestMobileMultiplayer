@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: dc59bb9ac002d4a958a9a317a7ff452a
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPUnderwaterRealistic.shader
+  uploadId: 910580

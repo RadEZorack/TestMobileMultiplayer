@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: ecdb2e279e133394f88c7ed0e31c7af5
+timeCreated: 1513449537
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Trees/ForestTree/VoxelForestLeaves.asset
+  uploadId: 910580

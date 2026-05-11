@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: f2ca2d34b5fd7f04da1be92b4d4a18e1
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/HQForest/Voxels/PBR/Terrazzo/Terrazzo.asset
+  uploadId: 910580

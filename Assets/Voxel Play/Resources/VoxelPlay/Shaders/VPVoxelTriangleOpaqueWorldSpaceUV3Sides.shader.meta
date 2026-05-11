@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 32d724c5e8ea741369bfa41181ab09b5
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPVoxelTriangleOpaqueWorldSpaceUV3Sides.shader
+  uploadId: 910580

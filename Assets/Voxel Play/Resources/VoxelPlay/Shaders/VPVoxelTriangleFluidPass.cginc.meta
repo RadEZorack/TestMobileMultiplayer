@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 43fde3d501c5e4ef79a8d16c52294f94
+ShaderIncludeImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPVoxelTriangleFluidPass.cginc
+  uploadId: 910580

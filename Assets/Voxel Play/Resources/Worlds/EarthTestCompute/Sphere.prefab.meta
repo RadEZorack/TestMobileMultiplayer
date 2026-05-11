@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: b9bd4cfb230444c7992873e4facd03d2
+timeCreated: 1558611008
+licenseType: Store
+NativeFormatImporter:
+  mainObjectFileID: 100100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/EarthTestCompute/Sphere.prefab
+  uploadId: 910580

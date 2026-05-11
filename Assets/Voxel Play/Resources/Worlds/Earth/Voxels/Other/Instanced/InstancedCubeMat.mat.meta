@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 3931f82f8d1644037b83af55e4c2dd06
+timeCreated: 1523431817
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Voxels/Other/Instanced/InstancedCubeMat.mat
+  uploadId: 910580

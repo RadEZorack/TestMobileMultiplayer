@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 20a8da4b95c8f4823ad0143484a5b041
+timeCreated: 1523431817
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Materials/VP Model Texture Alpha.mat
+  uploadId: 910580

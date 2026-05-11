@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: e42c2838974304d93b0756c7698a83d5
+timeCreated: 1523431817
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Materials/VP Indirect VertexLit.mat
+  uploadId: 910580

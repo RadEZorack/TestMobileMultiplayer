@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 61db311d340784e358e58dfac47d1526
+timeCreated: 1510673587
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Vegetation/GreenBushBig.asset
+  uploadId: 910580

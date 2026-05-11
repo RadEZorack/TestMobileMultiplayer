@@ -1,0 +1,19 @@
+fileFormatVersion: 2
+guid: e18a96b8f4c6d42e8a52f2978b3395d9
+timeCreated: 1513675946
+licenseType: Store
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Editor/VoxelDefinitionEditor.cs
+  uploadId: 910580

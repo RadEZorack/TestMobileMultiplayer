@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: cabd1e2d3576745efb17bd27a5412a74
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Defaults/VoxelPlaceholder.prefab
+  uploadId: 910580

@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: a53f877dff09541cb9f7e86492dda707
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Demos/Demo3_SimpleFlatTerrain/Sources/FoePrefab.prefab
+  uploadId: 910580

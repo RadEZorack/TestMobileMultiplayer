@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 63ce008e73a7c4c84920625729e69484
+timeCreated: 1509361177
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Biomes/Shrubland.asset
+  uploadId: 910580

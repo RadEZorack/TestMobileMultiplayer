@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: beec2b079ce654e41ba47f830e4c9add
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Textures/NoiseTex3D.asset
+  uploadId: 910580

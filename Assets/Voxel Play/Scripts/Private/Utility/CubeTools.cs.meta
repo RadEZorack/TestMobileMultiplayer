@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 1ab8fe2bb3af04f9daef8ae6d89c064b
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Scripts/Private/Utility/CubeTools.cs
+  uploadId: 910580

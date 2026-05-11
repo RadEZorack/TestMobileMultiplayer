@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: ae384f2d91bd54a37aa4f22b028cb388
+timeCreated: 1542294829
+licenseType: Store
+TextScriptImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/SavedGames/sampleWorld.bytes
+  uploadId: 910580

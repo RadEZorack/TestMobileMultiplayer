@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 0829ffb0b638a453ea9fe0286a241a6b
+timeCreated: 1509091951
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Items/Torch/Torch.prefab
+  uploadId: 910580

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 92e10f974c1fb4b06a88f252336e846e
+timeCreated: 1505834283
+licenseType: Store
+DefaultImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Demos/Demo5_HQForest/HQForest_Scene.unity
+  uploadId: 910580

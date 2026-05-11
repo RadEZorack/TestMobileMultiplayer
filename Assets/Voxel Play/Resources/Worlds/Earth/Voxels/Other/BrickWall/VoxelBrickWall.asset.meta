@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: aaa3fa1e37bd3468ebc9dd05dd16f553
+timeCreated: 1509449111
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Voxels/Other/BrickWall/VoxelBrickWall.asset
+  uploadId: 910580

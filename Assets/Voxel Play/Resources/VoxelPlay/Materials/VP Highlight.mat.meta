@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 636591686d25d4cdda71f7ea98235d4a
+timeCreated: 1507972578
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Materials/VP Highlight.mat
+  uploadId: 910580

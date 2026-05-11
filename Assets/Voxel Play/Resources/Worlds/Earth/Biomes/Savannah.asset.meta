@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: d041a3e3b44a0434190d17225a5dc721
+timeCreated: 1509361177
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Biomes/Savannah.asset
+  uploadId: 910580

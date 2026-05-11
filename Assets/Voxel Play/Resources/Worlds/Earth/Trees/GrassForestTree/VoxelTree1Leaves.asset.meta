@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: ec94ac31985974b0b8e93f1b9ae3abad
+timeCreated: 1509361789
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Trees/GrassForestTree/VoxelTree1Leaves.asset
+  uploadId: 910580

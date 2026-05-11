@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2b11f622d92bb46c38fd5a3a2a3198f5, type: 3}
+  m_Name: Taiga
+  m_EditorClassIdentifier: 
+  zones:
+  - altitudeMin: 127.5
+    altitudeMax: 191.25
+    moistureMin: 0.65
+    moistureMax: 1
+  showInBiomeMap: 1
+  biomeMapColor: {r: 0.5019608, g: 0, b: 0, a: 1}
+  voxelTop: {fileID: 11400000, guid: 8d4b031661b8a4304bfddfa13a9d3d27, type: 2}
+  noteTopAdditional:
+    dummy: 0
+  voxelTopAdditional: []
+  voxelDirt: {fileID: 11400000, guid: d7bb3bb282ad64d98aebfeb6a15917b6, type: 2}
+  noteDirtAdditional:
+    dummy: 0
+  voxelDirtAdditional: []
+  voxelLakeBed: {fileID: 11400000, guid: d7bb3bb282ad64d98aebfeb6a15917b6, type: 2}
+  ores: []
+  treeDensity: 0.02
+  trees:
+  - tree: {fileID: 11400000, guid: 8b69abd3ba8244d41ae0025d89663d25, type: 2}
+    probability: 0.5
+  - tree: {fileID: 11400000, guid: ab9db9f139e97dd408964fe06624e12c, type: 2}
+    probability: 0.5
+  vegetationDensity: 0.05
+  vegetation: []
+  underwaterVegetationDensity: 0.05
+  underwaterVegetation: []
+  undergroundVegDensity: 0.05
+  undergroundVegetation: []
+  undergroundCeilingVegDensity: 0.05
+  undergroundCeilingVegetation: []

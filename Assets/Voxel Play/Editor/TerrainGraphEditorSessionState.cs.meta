@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 0bfd34c4eaff044938bd7c1cb82f8b1b
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Editor/TerrainGraphEditorSessionState.cs
+  uploadId: 910580

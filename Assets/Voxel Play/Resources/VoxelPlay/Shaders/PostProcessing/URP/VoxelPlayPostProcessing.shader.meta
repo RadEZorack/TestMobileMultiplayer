@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: 0296ff6e6472949c184fc7ca9207afdd
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  preprocessorOverride: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/PostProcessing/URP/VoxelPlayPostProcessing.shader
+  uploadId: 910580

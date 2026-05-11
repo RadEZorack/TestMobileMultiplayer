@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 79f1c10b9b27343a0bffb917cf6f97b9
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Scripts/Private/LoadSave/VoxelPlayEnvironment.LoadSaveBinaryFormat22.cs
+  uploadId: 910580

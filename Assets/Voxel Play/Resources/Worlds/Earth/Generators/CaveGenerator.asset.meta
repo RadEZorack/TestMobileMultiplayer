@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 396d2f96698424fec80dec86e13b70d0
+timeCreated: 1526237778
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Generators/CaveGenerator.asset
+  uploadId: 910580

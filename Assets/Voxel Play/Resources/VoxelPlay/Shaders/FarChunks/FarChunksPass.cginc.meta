@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 0a05939c5b8ff44b8b31efda0495d803
+ShaderIncludeImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/FarChunks/FarChunksPass.cginc
+  uploadId: 910580

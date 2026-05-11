@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 6d32045a77b90ed4d818b2bfcfa1476f
+timeCreated: 1529752812
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/ThirdParty/DungeonMason/RPGHeroHP/Animations/GetHit_SwordShield.anim
+  uploadId: 910580

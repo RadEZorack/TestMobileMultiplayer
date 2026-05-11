@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: e3f5340b15207f747a059f7645135030
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/HQForest/Voxels/PBR/Cold Lava/Cold_Lava.asset
+  uploadId: 910580

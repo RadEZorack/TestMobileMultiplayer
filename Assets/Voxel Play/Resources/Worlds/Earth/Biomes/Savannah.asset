@@ -1,0 +1,49 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2b11f622d92bb46c38fd5a3a2a3198f5, type: 3}
+  m_Name: Savannah
+  m_EditorClassIdentifier: 
+  zones:
+  - altitudeMin: 0
+    altitudeMax: 63.75
+    moistureMin: 0.15
+    moistureMax: 0.2
+  - altitudeMin: 63.75
+    altitudeMax: 127.5
+    moistureMin: 0.15
+    moistureMax: 0.25
+  showInBiomeMap: 1
+  biomeMapColor: {r: 0, g: 0, b: 0.5019608, a: 1}
+  voxelTop: {fileID: 11400000, guid: 0944fd136217144c495dd55fb3fc68f9, type: 2}
+  noteTopAdditional:
+    dummy: 0
+  voxelTopAdditional: []
+  voxelDirt: {fileID: 11400000, guid: 7d4fff5939ef449f99916a471f7e6803, type: 2}
+  noteDirtAdditional:
+    dummy: 0
+  voxelDirtAdditional: []
+  voxelLakeBed: {fileID: 11400000, guid: 7d4fff5939ef449f99916a471f7e6803, type: 2}
+  ores: []
+  treeDensity: 0.002
+  trees:
+  - tree: {fileID: 11400000, guid: 05a5eed52cabfa24d8ad38f63a472ae9, type: 2}
+    probability: 0.5
+  - tree: {fileID: 11400000, guid: f50c8e07578043a4880e2b51dc58e93c, type: 2}
+    probability: 0.5
+  vegetationDensity: 0.05
+  vegetation: []
+  underwaterVegetationDensity: 0.05
+  underwaterVegetation: []
+  undergroundVegDensity: 0.05
+  undergroundVegetation: []
+  undergroundCeilingVegDensity: 0.05
+  undergroundCeilingVegetation: []

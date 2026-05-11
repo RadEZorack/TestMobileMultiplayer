@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 790c3ea72692a4fd3a4f1a5c7ff671c7
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Demos/Demo3_SimpleFlatTerrain/Sources/FoeMaterial.mat
+  uploadId: 910580

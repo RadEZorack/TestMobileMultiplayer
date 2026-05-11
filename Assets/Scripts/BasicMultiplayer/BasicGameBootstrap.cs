@@ -15,6 +15,7 @@ namespace BasicMultiplayer
             var root = new GameObject("Basic UDP Multiplayer");
             root.AddComponent<UdpGameClient>();
             root.AddComponent<PlayerWorldView>();
+            root.AddComponent<VoxelPlayMultiplayerDemo>();
 
             EnsureCamera();
             EnsureArena();

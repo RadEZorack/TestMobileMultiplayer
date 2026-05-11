@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 772ff9b3bcec541aca7b34c16fa46169
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPCommonURPSSAO.cginc
+  uploadId: 910580

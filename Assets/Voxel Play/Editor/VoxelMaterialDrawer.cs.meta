@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 971cfb5cf09ac4694ad8cb1c206644a2
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Editor/VoxelMaterialDrawer.cs
+  uploadId: 910580

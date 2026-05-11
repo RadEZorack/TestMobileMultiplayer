@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: a4c6e7d34f67c4138b952c9849bf73f1
+timeCreated: 1523431817
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Materials/VP Model VertexLit.mat
+  uploadId: 910580

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 7480b5c3500584bc0a11b5811c42ff4a
+timeCreated: 1509360710
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Voxels/Bare/VoxelBareDirt.asset
+  uploadId: 910580

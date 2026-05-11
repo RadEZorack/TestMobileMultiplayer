@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: dda8ec9c46660419489cc191ab227a05
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Materials/VP Model Texture Alpha
+    Double Sided.mat
+  uploadId: 910580

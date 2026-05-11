@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 6ba1daa293ff240e39a90af0ee4933d2
+timeCreated: 1506597139
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Materials/VP Voxel Triangle Water
+    No Shadows.mat
+  uploadId: 910580

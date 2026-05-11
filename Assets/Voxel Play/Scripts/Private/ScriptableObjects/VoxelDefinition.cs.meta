@@ -1,0 +1,19 @@
+fileFormatVersion: 2
+guid: 27712d9aa2d924ef4bfdf3b177b44418
+timeCreated: 1509362077
+licenseType: Store
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {fileID: 2800000, guid: 9b8bcff6a012c4098b50adb0055cb29e, type: 3}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Scripts/Private/ScriptableObjects/VoxelDefinition.cs
+  uploadId: 910580

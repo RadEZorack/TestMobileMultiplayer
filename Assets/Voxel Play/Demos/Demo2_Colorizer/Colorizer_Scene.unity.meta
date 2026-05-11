@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: b28a3bee18e534c9da89bb88e250af94
+timeCreated: 1522867015
+licenseType: Store
+DefaultImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Demos/Demo2_Colorizer/Colorizer_Scene.unity
+  uploadId: 910580

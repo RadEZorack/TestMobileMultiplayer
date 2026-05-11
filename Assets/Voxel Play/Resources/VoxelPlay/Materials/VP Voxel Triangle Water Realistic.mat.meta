@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: daf84448c1b564f8093639a54fcee5a6
+timeCreated: 1506597139
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Materials/VP Voxel Triangle Water
+    Realistic.mat
+  uploadId: 910580

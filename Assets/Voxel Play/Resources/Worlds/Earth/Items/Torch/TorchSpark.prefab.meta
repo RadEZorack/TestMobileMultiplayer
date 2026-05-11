@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 88caa3022c4f74ad4908529346e8c912
+timeCreated: 1509093040
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Items/Torch/TorchSpark.prefab
+  uploadId: 910580

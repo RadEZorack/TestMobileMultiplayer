@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: dfec4d7b439c74833be35244195b3016
+AssemblyDefinitionImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Scripts/Private/Rendering/PostProcessing/URP/VoxelPlayPostProcessingAssemblyDef.asmdef
+  uploadId: 910580

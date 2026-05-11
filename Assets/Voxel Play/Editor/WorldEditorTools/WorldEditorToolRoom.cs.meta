@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: c5915585b58af4a0f95b915b3a215b78
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Editor/WorldEditorTools/WorldEditorToolRoom.cs
+  uploadId: 910580

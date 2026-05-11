@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: f3fea42c04eb24ade9a5b69fcbce5516
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPHighlightMicroVoxels.shader
+  uploadId: 910580

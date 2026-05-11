@@ -43,7 +43,7 @@ namespace BasicMultiplayer
                     _avatars[id] = avatar;
                 }
 
-                var targetPosition = new Vector3(snapshot.Position.x, 0.55f, snapshot.Position.y);
+                var targetPosition = new Vector3(snapshot.Position.x, 0.8f, snapshot.Position.y);
                 avatar.position = Vector3.Lerp(avatar.position, targetPosition, 18f * Time.deltaTime);
 
                 var renderer = avatar.GetComponentInChildren<Renderer>();

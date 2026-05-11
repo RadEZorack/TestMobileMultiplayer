@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 182bd21a31be8466ab9869959ee9d6bd
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 100100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/InputControllers/PC/Voxel Play
+    PC Input Controller.prefab
+  uploadId: 910580

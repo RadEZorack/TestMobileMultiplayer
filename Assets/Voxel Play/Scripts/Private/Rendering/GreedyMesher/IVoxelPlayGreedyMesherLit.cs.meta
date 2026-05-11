@@ -1,0 +1,19 @@
+fileFormatVersion: 2
+guid: 9f75aa058ff0e46e18c5215b44045196
+timeCreated: 1505411670
+licenseType: Store
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Scripts/Private/Rendering/GreedyMesher/IVoxelPlayGreedyMesherLit.cs
+  uploadId: 910580

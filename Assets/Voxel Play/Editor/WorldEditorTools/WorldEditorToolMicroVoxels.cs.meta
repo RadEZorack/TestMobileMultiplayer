@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 0cbc74ca0dc0b434bbf5b82f877aa558
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Editor/WorldEditorTools/WorldEditorToolMicroVoxels.cs
+  uploadId: 910580

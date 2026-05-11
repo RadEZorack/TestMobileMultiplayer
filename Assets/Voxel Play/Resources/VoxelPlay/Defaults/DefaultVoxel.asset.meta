@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 764590ab8f7e04785a8ac184f4ff675a
+timeCreated: 1522913809
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Defaults/DefaultVoxel.asset
+  uploadId: 910580

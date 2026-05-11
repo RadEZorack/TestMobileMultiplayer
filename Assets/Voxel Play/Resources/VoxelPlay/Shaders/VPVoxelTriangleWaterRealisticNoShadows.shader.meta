@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 422d820e21363492f86a191e7b629722
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPVoxelTriangleWaterRealisticNoShadows.shader
+  uploadId: 910580

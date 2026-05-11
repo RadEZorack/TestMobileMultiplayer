@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 2e1095f653b644389bd72c3dcd3d9bb3
+timeCreated: 1509378913
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Voxels/Shrubland/VoxelShrublandDirt.asset
+  uploadId: 910580

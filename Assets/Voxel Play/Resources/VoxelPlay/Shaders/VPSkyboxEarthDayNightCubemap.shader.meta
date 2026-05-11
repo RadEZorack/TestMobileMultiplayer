@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 54bb8bebd5d8b4aa8b6422ea8e64f054
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPSkyboxEarthDayNightCubemap.shader
+  uploadId: 910580

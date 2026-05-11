@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: efa7e90d5c32e4da98008497440778d6
+timeCreated: 1509448558
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Voxels/Other/SolidRock/VoxelSolidRock.asset
+  uploadId: 910580

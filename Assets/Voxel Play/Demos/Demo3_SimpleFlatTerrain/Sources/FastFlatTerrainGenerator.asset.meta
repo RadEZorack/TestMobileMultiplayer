@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 7e814b7c31a3b4eecab7dd3f6bb9091f
+timeCreated: 1527416946
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Demos/Demo3_SimpleFlatTerrain/Sources/FastFlatTerrainGenerator.asset
+  uploadId: 910580

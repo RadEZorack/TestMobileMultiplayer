@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: de8e91e93f3674377bbbd6b16f724cfe
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Items/Weapons/shotgun.prefab
+  uploadId: 910580

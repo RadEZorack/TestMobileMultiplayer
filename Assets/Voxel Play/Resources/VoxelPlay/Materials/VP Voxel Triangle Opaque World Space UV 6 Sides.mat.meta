@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 0790b869658b7486aba5c9f1aa41036d
+timeCreated: 1506597139
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Materials/VP Voxel Triangle Opaque
+    World Space UV 6 Sides.mat
+  uploadId: 910580

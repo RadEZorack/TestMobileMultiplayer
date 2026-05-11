@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: d7bb3bb282ad64d98aebfeb6a15917b6
+timeCreated: 1509378939
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Voxels/Taiga/VoxelTaigaDirt.asset
+  uploadId: 910580

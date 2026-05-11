@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: e7e8a73e3950e4dfc8121742880e077f
+timeCreated: 1522870881
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Demos/Demo2_Colorizer/Sources/SkyboxColorizer.mat
+  uploadId: 910580

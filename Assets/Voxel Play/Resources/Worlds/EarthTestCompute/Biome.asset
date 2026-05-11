@@ -1,0 +1,50 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2b11f622d92bb46c38fd5a3a2a3198f5, type: 3}
+  m_Name: Biome
+  m_EditorClassIdentifier: 
+  zones:
+  - altitudeMin: 0
+    altitudeMax: 255
+    moistureMin: 0
+    moistureMax: 1
+  showInBiomeMap: 1
+  biomeMapColor: {r: 1, g: 0, b: 0, a: 1}
+  voxelTop: {fileID: 11400000, guid: 52d863bd1cad545b092bbe21560ae0d7, type: 2}
+  noteTopAdditional:
+    dummy: 0
+  voxelTopAdditional: []
+  voxelDirt: {fileID: 11400000, guid: 52d863bd1cad545b092bbe21560ae0d7, type: 2}
+  noteDirtAdditional:
+    dummy: 0
+  voxelDirtAdditional: []
+  voxelLakeBed: {fileID: 0}
+  ores:
+  - ore: {fileID: 11400000, guid: bb5aad962142c4568aa59bffed2349fa, type: 2}
+    probabilityMin: 0
+    probabilityMax: 0.1
+    depthMin: 0
+    depthMax: 500
+    veinMinSize: 1
+    veinMaxSize: 2
+    veinsCountMin: 1
+    veinsCountMax: 2
+  treeDensity: 0.001
+  trees: []
+  vegetationDensity: 0.3
+  vegetation: []
+  underwaterVegetationDensity: 0.05
+  underwaterVegetation: []
+  undergroundVegDensity: 0.05
+  undergroundVegetation: []
+  undergroundCeilingVegDensity: 0.05
+  undergroundCeilingVegetation: []

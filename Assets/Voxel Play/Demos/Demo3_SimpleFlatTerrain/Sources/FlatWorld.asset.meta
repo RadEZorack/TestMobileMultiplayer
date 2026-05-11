@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 0df77b89d1f024a1e8088b2152d03f40
+timeCreated: 1527413648
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Demos/Demo3_SimpleFlatTerrain/Sources/FlatWorld.asset
+  uploadId: 910580

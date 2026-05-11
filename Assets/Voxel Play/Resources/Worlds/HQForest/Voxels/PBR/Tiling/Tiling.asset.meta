@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 2238e5c178c70994895d5dd86c53f285
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/HQForest/Voxels/PBR/Tiling/Tiling.asset
+  uploadId: 910580

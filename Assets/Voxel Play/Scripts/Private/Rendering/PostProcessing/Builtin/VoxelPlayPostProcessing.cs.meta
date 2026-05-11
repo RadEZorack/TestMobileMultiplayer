@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: f486618275c574f62a9129e2024d2b72
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Scripts/Private/Rendering/PostProcessing/Builtin/VoxelPlayPostProcessing.cs
+  uploadId: 910580

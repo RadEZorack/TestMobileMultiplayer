@@ -1,0 +1,19 @@
+fileFormatVersion: 2
+guid: f6c72d1eb07ce4c49953da3c18b8aa4c
+timeCreated: 1521037635
+licenseType: Store
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Editor/TextureVariationConfigDrawer.cs
+  uploadId: 910580

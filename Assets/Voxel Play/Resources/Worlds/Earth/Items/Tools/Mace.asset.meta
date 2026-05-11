@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: cd445da59dd4442df8b4dfeac93e476c
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Items/Tools/Mace.asset
+  uploadId: 910580

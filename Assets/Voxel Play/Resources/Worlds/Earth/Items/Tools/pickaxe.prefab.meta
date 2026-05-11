@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 93bd275cbb42f424784af73d249a6143
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Items/Tools/pickaxe.prefab
+  uploadId: 910580

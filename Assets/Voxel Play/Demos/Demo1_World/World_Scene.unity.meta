@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: a32df4df12658427085a719b38c6d279
+timeCreated: 1505834283
+licenseType: Store
+DefaultImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Demos/Demo1_World/World_Scene.unity
+  uploadId: 910580

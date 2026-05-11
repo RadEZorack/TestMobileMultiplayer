@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 19a57f419247f4db2bf0ab31c1ed0b46
+timeCreated: 1505146203
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Materials/VP Skybox Earth Simplified.mat
+  uploadId: 910580

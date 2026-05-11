@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 5515a54cec26f394995d161af1609af9
+timeCreated: 1529753150
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/ThirdParty/DungeonMason/RPGHeroHP/Materials/Sword.mat
+  uploadId: 910580

@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: a1bdf34a432584a31ba71b6d3335e0f4
+timeCreated: 1528313018
+licenseType: Store
+NativeFormatImporter:
+  mainObjectFileID: 100100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/InputControllers/Mobile/Voxel
+    Play Mobile Input Controller.prefab
+  uploadId: 910580

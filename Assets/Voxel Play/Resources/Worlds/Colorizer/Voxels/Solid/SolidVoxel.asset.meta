@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 1aebf45b02eba4d1db5e52f949a1227b
+timeCreated: 1522966052
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Colorizer/Voxels/Solid/SolidVoxel.asset
+  uploadId: 910580

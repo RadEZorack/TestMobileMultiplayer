@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 71b857e75a8184d51b44f8522ad8ad30
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPCurvedSurfaceShader.shader
+  uploadId: 910580

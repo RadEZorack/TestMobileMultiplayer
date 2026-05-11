@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 0401240d2185248608c4dbb2fe3f8b8c
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPIndirectTexture.shader
+  uploadId: 910580

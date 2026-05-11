@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 426bb1807bdef49a8b47f3adf29ed303
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Scripts/Private/CharacterControllers/FirstPersonController/Scripts/MouseLook.cs
+  uploadId: 910580

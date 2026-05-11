@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: f9e52046648ec584b8939d4e960d64b6
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/HQForest/Voxels/PBR/Wood_Parquet_White/Wood_Parquet_White.asset
+  uploadId: 910580

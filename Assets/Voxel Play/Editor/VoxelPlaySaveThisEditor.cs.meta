@@ -1,0 +1,19 @@
+fileFormatVersion: 2
+guid: 426b6aa128ed641ffac297affedd52b5
+timeCreated: 1513675946
+licenseType: Store
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Editor/VoxelPlaySaveThisEditor.cs
+  uploadId: 910580

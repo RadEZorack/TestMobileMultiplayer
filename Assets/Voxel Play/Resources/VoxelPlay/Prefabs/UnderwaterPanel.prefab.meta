@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 8e05ede4dae64417db70296fbf0aae6f
+timeCreated: 1508343266
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Prefabs/UnderwaterPanel.prefab
+  uploadId: 910580

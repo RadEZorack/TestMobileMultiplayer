@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: d8b6800a316fb4dba841ff7193772760
+timeCreated: 1509378882
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Voxels/Forest/VoxelForestDirt.asset
+  uploadId: 910580

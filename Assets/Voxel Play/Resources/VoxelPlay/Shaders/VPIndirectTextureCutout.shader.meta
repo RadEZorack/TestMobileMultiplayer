@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 050410f3d4e614d5aa331a8f67f24687
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPIndirectTextureCutout.shader
+  uploadId: 910580

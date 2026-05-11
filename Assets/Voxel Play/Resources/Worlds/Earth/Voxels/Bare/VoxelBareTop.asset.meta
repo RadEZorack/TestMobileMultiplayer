@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 986bbc7ebbece4482b97c234a02b9310
+timeCreated: 1509360710
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Voxels/Bare/VoxelBareTop.asset
+  uploadId: 910580

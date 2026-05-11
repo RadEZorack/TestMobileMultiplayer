@@ -1,0 +1,19 @@
+fileFormatVersion: 2
+guid: 076c1c72b6cbf45e29fa2ffbba49bbaa
+timeCreated: 1509092256
+licenseType: Store
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Items/Torch/TorchLightAnimator.cs
+  uploadId: 910580

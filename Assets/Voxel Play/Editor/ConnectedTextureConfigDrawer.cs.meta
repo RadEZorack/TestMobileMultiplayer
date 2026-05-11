@@ -1,0 +1,19 @@
+fileFormatVersion: 2
+guid: 10fca49cd534f4c64a47260fd4783ca8
+timeCreated: 1521037635
+licenseType: Store
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Editor/ConnectedTextureConfigDrawer.cs
+  uploadId: 910580

@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: fadbf4c0f0be44eacac88f79a9e488f1
+timeCreated: 1529943026
+licenseType: Store
+NativeFormatImporter:
+  mainObjectFileID: 100100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Prefabs/FPSController.prefab
+  uploadId: 910580

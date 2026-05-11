@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 8bce57c5c3b494dfb99d7d88caec5fc7
+timeCreated: 1509443895
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Materials/VP Grid.mat
+  uploadId: 910580

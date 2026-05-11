@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: b85ef4cd243f54b4dbc5fead5576f3cc
+timeCreated: 1509091225
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Items/Torch/TorchFireMat.mat
+  uploadId: 910580

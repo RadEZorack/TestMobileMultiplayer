@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: ccc525a48fdcf466b86759e6df9b56e8
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/HQForest/Voxels/Other/Transparent/HQTransparentCube.asset
+  uploadId: 910580

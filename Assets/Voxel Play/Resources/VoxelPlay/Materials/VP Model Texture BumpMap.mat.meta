@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: e10e5dcda80534d05ad5382b8686bc3f
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Materials/VP Model Texture BumpMap.mat
+  uploadId: 910580

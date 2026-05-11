@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: f324d367a3baf4093a5b474cd572ac45
+ShaderIncludeImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPVoxelTriangleCutoutCrossDepthOnlyURP.cginc
+  uploadId: 910580

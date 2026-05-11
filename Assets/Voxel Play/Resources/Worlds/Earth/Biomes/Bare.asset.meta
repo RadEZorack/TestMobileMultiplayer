@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 05d8a81088f8143dab9ec3895664af6b
+timeCreated: 1509361177
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Biomes/Bare.asset
+  uploadId: 910580

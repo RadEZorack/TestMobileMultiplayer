@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: caa7a927131c64793b022f43ec79c65c
+timeCreated: 1547720849
+licenseType: Store
+NativeFormatImporter:
+  mainObjectFileID: -1
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Editor/Resources/VoxelPlay/PreviewTexture.mat
+  uploadId: 910580

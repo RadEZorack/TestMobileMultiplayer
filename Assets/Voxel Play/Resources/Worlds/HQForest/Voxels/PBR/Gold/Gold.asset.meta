@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: f506ce5a00b3f6d49aa87b894dce156d
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/HQForest/Voxels/PBR/Gold/Gold.asset
+  uploadId: 910580

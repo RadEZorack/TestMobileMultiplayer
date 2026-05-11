@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 48b87e2f2bb2d4329a317c960a425ad9
+timeCreated: 1507220086
+licenseType: Store
+TextScriptImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Demos/Demo3_SimpleFlatTerrain/README.txt
+  uploadId: 910580

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 4c2a39884c2314f228f7d9fda36bdb51
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Voxels/Buildings/VoxelBuildingStep_Upside_Down.asset
+  uploadId: 910580

@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: f1282326067854afda6a68b6079d7e80
+timeCreated: 1506597139
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Demos/Demo1_World/Sources/VoxelPlay Big Text Triangle
+    Material.mat
+  uploadId: 910580

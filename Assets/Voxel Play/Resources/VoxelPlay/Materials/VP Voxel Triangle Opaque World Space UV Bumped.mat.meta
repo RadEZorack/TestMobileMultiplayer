@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 97f73bfeae914407dabfdfd312d3f2cc
+timeCreated: 1506597139
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Materials/VP Voxel Triangle Opaque
+    World Space UV Bumped.mat
+  uploadId: 910580

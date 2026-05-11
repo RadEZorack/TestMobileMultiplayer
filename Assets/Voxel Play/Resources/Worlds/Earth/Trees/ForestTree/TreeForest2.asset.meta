@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 60e5b562306847243b35fddd7d350e1f
+timeCreated: 1513450708
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Trees/ForestTree/TreeForest2.asset
+  uploadId: 910580

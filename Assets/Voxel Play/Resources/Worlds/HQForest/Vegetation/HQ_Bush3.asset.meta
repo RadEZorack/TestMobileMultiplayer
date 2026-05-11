@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: ca4f35116233d4be8b2d100bde37ca40
+timeCreated: 1510673587
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/HQForest/Vegetation/HQ_Bush3.asset
+  uploadId: 910580

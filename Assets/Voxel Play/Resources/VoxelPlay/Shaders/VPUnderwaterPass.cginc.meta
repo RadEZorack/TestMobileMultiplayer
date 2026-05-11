@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 4a2752f5a2206493a9b2dcb503257a7d
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/VoxelPlay/Shaders/VPUnderwaterPass.cginc
+  uploadId: 910580

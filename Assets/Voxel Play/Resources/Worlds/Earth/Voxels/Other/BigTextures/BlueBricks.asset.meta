@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: a67e920a224d246e09e89e97178996b2
+timeCreated: 1509378882
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/Earth/Voxels/Other/BigTextures/BlueBricks.asset
+  uploadId: 910580

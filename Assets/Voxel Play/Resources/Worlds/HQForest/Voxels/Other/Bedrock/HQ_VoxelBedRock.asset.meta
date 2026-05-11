@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 61e312d6220fd44548ef6bcb198450ed
+timeCreated: 1527602820
+licenseType: Store
+NativeFormatImporter:
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310775
+  packageName: Voxel Play 3
+  packageVersion: 40.0.3
+  assetPath: Assets/Voxel Play/Resources/Worlds/HQForest/Voxels/Other/Bedrock/HQ_VoxelBedRock.asset
+  uploadId: 910580
