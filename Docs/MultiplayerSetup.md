@@ -12,14 +12,22 @@ When Voxel Play 3 is installed, the sample scene creates a runtime Voxel Play wo
 
 ## 1. Run the server locally
 
-From the project root:
+For the Docker path that matches a simple droplet deploy, copy `.env.example` to `.env`, adjust the values, then start the full stack:
+
+```sh
+docker compose up -d --build
+```
+
+This starts Postgres, the UDP game server, and nginx. Nginx listens on HTTP `80` and UDP `7777`, then forwards game traffic to the `game-server` container.
+
+For quick local server iteration without rebuilding the container, run only Postgres and start the .NET server directly:
 
 ```sh
 docker compose up -d postgres
 dotnet run --project Server/BasicUdpGameServer -- 7777
 ```
 
-Leave that Terminal window open.
+Leave that Terminal window open. If the full compose stack is already running, stop `nginx` and `game-server` first so they do not occupy UDP port `7777`.
 
 The server stores voxel edits in Postgres by default using:
 
@@ -33,9 +41,12 @@ For droplet-style deploys, copy `.env.example` to `.env` and set the hostname us
 
 ```sh
 APP_DOMAIN=dev.augmego.ca
+POSTGRES_DB=mobile_multiplayer
+POSTGRES_USER=game
+POSTGRES_PASSWORD=game_dev_password
 ```
 
-Use `APP_DOMAIN=prod.augmego.ca` or another host name for a different environment. If `.env` is missing, compose defaults to `dev.augmego.ca`.
+Use `APP_DOMAIN=prod.augmego.ca` or another host name for a different environment. Set a real database password before putting the stack on a public droplet. If `.env` is missing, compose defaults to the dev values in `docker-compose.yml`.
 
 ## 2. Test in the Unity Editor
 
@@ -52,14 +63,12 @@ Aim with the center crosshair. Use the on-screen `L` button or left mouse button
 
 To test a second player, run another Unity editor instance, or make a standalone desktop build and connect both to `127.0.0.1`.
 
-## Optional nginx UDP front door
+## Docker nginx UDP front door
 
-The included `docker-compose.yml` exposes nginx on HTTP port `80` and UDP port `7777`. Because nginx owns public UDP `7777`, run the standalone game server on local UDP `7778` when testing through nginx:
+The included `docker-compose.yml` exposes nginx on HTTP port `80` and UDP port `7777`. In the Docker stack, nginx forwards UDP traffic to the `game-server` service:
 
 ```sh
-docker compose up -d postgres
-dotnet run --project Server/BasicUdpGameServer -- 7778
-docker compose up -d
+docker compose up -d --build
 ```
 
 Then connect clients to `dev.augmego.ca` on port `7777`.
@@ -95,5 +104,5 @@ This is a prototype transport and game loop. Good next steps are:
 - Add sequence numbers and interpolation buffering for smoother remote motion.
 - Add chunk snapshot compaction once edit logs become too large.
 - Add authentication before accepting public traffic.
-- Package the server in Docker for cloud hosting.
+- Add TLS/certbot or a managed load balancer for production HTTP endpoints.
 - Move from text packets to compact binary packets when gameplay grows.

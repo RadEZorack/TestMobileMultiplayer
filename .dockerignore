@@ -1,0 +1,6 @@
+*
+!Server/
+!Server/BasicUdpGameServer/
+!Server/BasicUdpGameServer/**
+Server/BasicUdpGameServer/bin/
+Server/BasicUdpGameServer/obj/
