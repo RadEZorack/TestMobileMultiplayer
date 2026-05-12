@@ -1,10 +1,10 @@
 server {
     listen 80;
     listen [::]:80;
-    server_name dev.augmego.ca;
+    server_name ${APP_DOMAIN};
 
     location / {
         add_header Content-Type text/plain;
-        return 200 "dev.augmego.ca nginx is running\n";
+        return 200 "${APP_DOMAIN} nginx is running\n";
     }
 }

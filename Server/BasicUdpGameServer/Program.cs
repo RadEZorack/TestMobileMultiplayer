@@ -2,13 +2,20 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Text;
+using Npgsql;
+
+[assembly: InternalsVisibleTo("BasicUdpGameServer.Tests")]
+
+const string DefaultWorldId = "default";
+const string DefaultDatabaseConnectionString =
+    "Host=localhost;Port=5432;Database=mobile_multiplayer;Username=game;Password=game_dev_password;Include Error Detail=true";
 
 var port = args.Length > 0 && int.TryParse(args[0], out var parsedPort)
     ? parsedPort
     : 7777;
 
-using var server = new BasicUdpGameServer(port);
 using var shutdown = new CancellationTokenSource();
 
 Console.CancelKeyPress += (_, eventArgs) =>
@@ -17,6 +24,18 @@ Console.CancelKeyPress += (_, eventArgs) =>
     shutdown.Cancel();
 };
 
+var databaseConnectionString = Environment.GetEnvironmentVariable("GAME_DATABASE_URL");
+
+if (string.IsNullOrWhiteSpace(databaseConnectionString))
+{
+    databaseConnectionString = DefaultDatabaseConnectionString;
+}
+
+await using var voxelEditStore = new PostgresVoxelEditStore(databaseConnectionString, DefaultWorldId);
+await voxelEditStore.InitializeAsync(shutdown.Token);
+var persistedVoxelEdits = await voxelEditStore.LoadVoxelEditsAsync(shutdown.Token);
+
+using var server = new BasicUdpGameServer(port, voxelEditStore, persistedVoxelEdits);
 await server.RunAsync(shutdown.Token);
 
 internal sealed class BasicUdpGameServer : IDisposable
@@ -29,16 +48,23 @@ internal sealed class BasicUdpGameServer : IDisposable
     private static readonly TimeSpan ClientTimeout = TimeSpan.FromSeconds(10);
 
     private readonly UdpClient _udp;
+    private readonly PostgresVoxelEditStore _voxelEditStore;
     private readonly ConcurrentDictionary<string, Player> _playersByClientKey = new();
     private readonly List<VoxelEdit> _voxelEdits = new();
     private readonly object _voxelEditLock = new();
+    private readonly SemaphoreSlim _voxelEditSaveLock = new(1, 1);
     private int _nextPlayerId;
     private long _nextVoxelEditSequence;
     private long _tick;
 
-    public BasicUdpGameServer(int port)
+    public BasicUdpGameServer(int port, PostgresVoxelEditStore voxelEditStore, IReadOnlyCollection<VoxelEdit> persistedVoxelEdits)
     {
+        _voxelEditStore = voxelEditStore;
+        _voxelEdits.AddRange(persistedVoxelEdits.OrderBy(edit => edit.Sequence));
+        _nextVoxelEditSequence = _voxelEdits.Count == 0 ? 0 : _voxelEdits[^1].Sequence;
         _udp = new UdpClient(new IPEndPoint(IPAddress.Any, port));
+
+        Console.WriteLine($"Loaded {_voxelEdits.Count} persisted voxel edit(s).");
         Console.WriteLine($"UDP game server listening on 0.0.0.0:{port}");
         Console.WriteLine("Press Ctrl+C to stop.");
     }
@@ -60,6 +86,7 @@ internal sealed class BasicUdpGameServer : IDisposable
 
     public void Dispose()
     {
+        _voxelEditSaveLock.Dispose();
         _udp.Dispose();
     }
 
@@ -90,7 +117,7 @@ internal sealed class BasicUdpGameServer : IDisposable
                 continue;
             }
 
-            HandleMessage(endpointKey, result.RemoteEndPoint, message);
+            await HandleMessageAsync(endpointKey, result.RemoteEndPoint, message, cancellationToken);
         }
     }
 
@@ -112,7 +139,7 @@ internal sealed class BasicUdpGameServer : IDisposable
         }
     }
 
-    private void HandleMessage(string endpointKey, IPEndPoint endpoint, string message)
+    private async Task HandleMessageAsync(string endpointKey, IPEndPoint endpoint, string message, CancellationToken cancellationToken)
     {
         var parts = message.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -162,7 +189,7 @@ internal sealed class BasicUdpGameServer : IDisposable
                 }
 
                 var editClientKey = GetSessionKey(parts[1], endpointKey);
-                HandleVoxelEdit(editClientKey, endpoint, parts);
+                await HandleVoxelEditAsync(editClientKey, endpoint, parts, cancellationToken);
                 break;
 
             case "PING":
@@ -221,7 +248,7 @@ internal sealed class BasicUdpGameServer : IDisposable
         return existingPlayer;
     }
 
-    private void HandleVoxelEdit(string clientKey, IPEndPoint endpoint, string[] parts)
+    private async Task HandleVoxelEditAsync(string clientKey, IPEndPoint endpoint, string[] parts, CancellationToken cancellationToken)
     {
         var player = RegisterOrRefreshPlayer(clientKey, endpoint, "Player", sendWelcome: false);
         SendPendingVoxelEdits(player, ParseAcknowledgedVoxelEditSequence(parts, 8));
@@ -235,12 +262,25 @@ internal sealed class BasicUdpGameServer : IDisposable
             return;
         }
 
-        if (!player.SeenVoxelEditClientSequences.Add(clientEditSequence))
+        if (player.SeenVoxelEditClientSequences.Contains(clientEditSequence))
         {
             return;
         }
 
-        var edit = AddVoxelEdit(player.Id, action, x, y, z, SanitizeVoxelType(parts[7]));
+        VoxelEdit edit;
+
+        try
+        {
+            edit = await AddVoxelEditAsync(player.Id, action, x, y, z, SanitizeVoxelType(parts[7]), cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Console.Error.WriteLine($"Failed to persist voxel edit from player {player.Id}: {exception.Message}");
+            Send(endpoint, "ERROR EDIT_SAVE_FAILED");
+            return;
+        }
+
+        player.SeenVoxelEditClientSequences.Add(clientEditSequence);
         BroadcastVoxelEdit(edit);
     }
 
@@ -276,20 +316,39 @@ internal sealed class BasicUdpGameServer : IDisposable
         }
     }
 
-    private VoxelEdit AddVoxelEdit(int playerId, string action, int x, int y, int z, string voxelType)
+    private async Task<VoxelEdit> AddVoxelEditAsync(int playerId, string action, int x, int y, int z, string voxelType, CancellationToken cancellationToken)
     {
-        lock (_voxelEditLock)
+        await _voxelEditSaveLock.WaitAsync(cancellationToken);
+
+        try
         {
-            var edit = new VoxelEdit(
-                ++_nextVoxelEditSequence,
-                playerId,
-                action,
-                x,
-                y,
-                z,
-                voxelType);
-            _voxelEdits.Add(edit);
+            VoxelEdit edit;
+
+            lock (_voxelEditLock)
+            {
+                edit = new VoxelEdit(
+                    _nextVoxelEditSequence + 1,
+                    playerId,
+                    action,
+                    x,
+                    y,
+                    z,
+                    voxelType);
+            }
+
+            await _voxelEditStore.SaveVoxelEditAsync(edit, cancellationToken);
+
+            lock (_voxelEditLock)
+            {
+                _voxelEdits.Add(edit);
+                _nextVoxelEditSequence = Math.Max(_nextVoxelEditSequence, edit.Sequence);
+            }
+
             return edit;
+        }
+        finally
+        {
+            _voxelEditSaveLock.Release();
         }
     }
 
@@ -513,13 +572,221 @@ internal sealed class BasicUdpGameServer : IDisposable
         public long LastVoxelEditAcknowledged { get; set; }
         public DateTimeOffset LastSeen { get; set; }
     }
-
-    private sealed record VoxelEdit(
-        long Sequence,
-        int PlayerId,
-        string Action,
-        int X,
-        int Y,
-        int Z,
-        string VoxelType);
 }
+
+internal sealed class PostgresVoxelEditStore : IAsyncDisposable
+{
+    private readonly NpgsqlDataSource _dataSource;
+    private readonly string _worldId;
+
+    public PostgresVoxelEditStore(string connectionString, string worldId)
+    {
+        _dataSource = NpgsqlDataSource.Create(connectionString);
+        _worldId = worldId;
+    }
+
+    public async Task InitializeAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            CREATE TABLE IF NOT EXISTS voxel_edits (
+                world_id text NOT NULL,
+                sequence bigint NOT NULL,
+                player_id integer NOT NULL,
+                action text NOT NULL CHECK (action IN ('PLACE', 'REMOVE')),
+                x integer NOT NULL,
+                y integer NOT NULL,
+                z integer NOT NULL,
+                voxel_type text NOT NULL,
+                chunk_x integer NOT NULL,
+                chunk_y integer NOT NULL,
+                chunk_z integer NOT NULL,
+                created_at timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY (world_id, sequence)
+            );
+
+            CREATE INDEX IF NOT EXISTS voxel_edits_world_chunk_idx
+                ON voxel_edits (world_id, chunk_x, chunk_y, chunk_z);
+
+            CREATE TABLE IF NOT EXISTS changed_chunks (
+                world_id text NOT NULL,
+                chunk_x integer NOT NULL,
+                chunk_y integer NOT NULL,
+                chunk_z integer NOT NULL,
+                latest_sequence bigint NOT NULL,
+                updated_at timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY (world_id, chunk_x, chunk_y, chunk_z)
+            );
+            """,
+            connection);
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        Console.WriteLine("Postgres voxel persistence ready.");
+    }
+
+    public async Task<IReadOnlyList<VoxelEdit>> LoadVoxelEditsAsync(CancellationToken cancellationToken)
+    {
+        var edits = new List<VoxelEdit>();
+
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT sequence, player_id, action, x, y, z, voxel_type
+            FROM voxel_edits
+            WHERE world_id = @world_id
+            ORDER BY sequence;
+            """,
+            connection);
+
+        command.Parameters.AddWithValue("world_id", _worldId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            edits.Add(new VoxelEdit(
+                reader.GetInt64(0),
+                reader.GetInt32(1),
+                reader.GetString(2),
+                reader.GetInt32(3),
+                reader.GetInt32(4),
+                reader.GetInt32(5),
+                reader.GetString(6)));
+        }
+
+        return edits;
+    }
+
+    public async Task SaveVoxelEditAsync(VoxelEdit edit, CancellationToken cancellationToken)
+    {
+        var chunk = VoxelChunkMath.FromVoxelCell(edit.X, edit.Y, edit.Z);
+
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var insertCommand = new NpgsqlCommand(
+            """
+            INSERT INTO voxel_edits (
+                world_id,
+                sequence,
+                player_id,
+                action,
+                x,
+                y,
+                z,
+                voxel_type,
+                chunk_x,
+                chunk_y,
+                chunk_z
+            )
+            VALUES (
+                @world_id,
+                @sequence,
+                @player_id,
+                @action,
+                @x,
+                @y,
+                @z,
+                @voxel_type,
+                @chunk_x,
+                @chunk_y,
+                @chunk_z
+            );
+            """,
+            connection,
+            transaction))
+        {
+            insertCommand.Parameters.AddWithValue("world_id", _worldId);
+            insertCommand.Parameters.AddWithValue("sequence", edit.Sequence);
+            insertCommand.Parameters.AddWithValue("player_id", edit.PlayerId);
+            insertCommand.Parameters.AddWithValue("action", edit.Action);
+            insertCommand.Parameters.AddWithValue("x", edit.X);
+            insertCommand.Parameters.AddWithValue("y", edit.Y);
+            insertCommand.Parameters.AddWithValue("z", edit.Z);
+            insertCommand.Parameters.AddWithValue("voxel_type", edit.VoxelType);
+            insertCommand.Parameters.AddWithValue("chunk_x", chunk.X);
+            insertCommand.Parameters.AddWithValue("chunk_y", chunk.Y);
+            insertCommand.Parameters.AddWithValue("chunk_z", chunk.Z);
+
+            await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var upsertCommand = new NpgsqlCommand(
+            """
+            INSERT INTO changed_chunks (
+                world_id,
+                chunk_x,
+                chunk_y,
+                chunk_z,
+                latest_sequence,
+                updated_at
+            )
+            VALUES (
+                @world_id,
+                @chunk_x,
+                @chunk_y,
+                @chunk_z,
+                @latest_sequence,
+                now()
+            )
+            ON CONFLICT (world_id, chunk_x, chunk_y, chunk_z)
+            DO UPDATE SET
+                latest_sequence = GREATEST(changed_chunks.latest_sequence, EXCLUDED.latest_sequence),
+                updated_at = now();
+            """,
+            connection,
+            transaction))
+        {
+            upsertCommand.Parameters.AddWithValue("world_id", _worldId);
+            upsertCommand.Parameters.AddWithValue("chunk_x", chunk.X);
+            upsertCommand.Parameters.AddWithValue("chunk_y", chunk.Y);
+            upsertCommand.Parameters.AddWithValue("chunk_z", chunk.Z);
+            upsertCommand.Parameters.AddWithValue("latest_sequence", edit.Sequence);
+
+            await upsertCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        return _dataSource.DisposeAsync();
+    }
+}
+
+internal static class VoxelChunkMath
+{
+    public const int ChunkSize = 16;
+
+    public static VoxelChunkCoordinate FromVoxelCell(int x, int y, int z)
+    {
+        return new VoxelChunkCoordinate(
+            FloorDiv(x, ChunkSize),
+            FloorDiv(y, ChunkSize),
+            FloorDiv(z, ChunkSize));
+    }
+
+    public static int FloorDiv(int value, int divisor)
+    {
+        if (divisor <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(divisor), "Divisor must be positive.");
+        }
+
+        var quotient = Math.DivRem(value, divisor, out var remainder);
+        return remainder < 0 ? quotient - 1 : quotient;
+    }
+}
+
+internal readonly record struct VoxelChunkCoordinate(int X, int Y, int Z);
+
+internal sealed record VoxelEdit(
+    long Sequence,
+    int PlayerId,
+    string Action,
+    int X,
+    int Y,
+    int Z,
+    string VoxelType);

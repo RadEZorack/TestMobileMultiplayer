@@ -21,6 +21,8 @@
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
 *.log
+.env
+!.env.example
 
 # By default unity supports Blender asset imports, *.blend1 blender files do not need to be committed to version control.
 *.blend1
@@ -51,6 +53,7 @@
 ExportedObj/
 .consulo/
 *.csproj
+!Server/**/*.csproj
 *.unityproj
 *.sln
 *.suo

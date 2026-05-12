@@ -15,10 +15,27 @@ When Voxel Play 3 is installed, the sample scene creates a runtime Voxel Play wo
 From the project root:
 
 ```sh
+docker compose up -d postgres
 dotnet run --project Server/BasicUdpGameServer -- 7777
 ```
 
 Leave that Terminal window open.
+
+The server stores voxel edits in Postgres by default using:
+
+```text
+Host=localhost;Port=5432;Database=mobile_multiplayer;Username=game;Password=game_dev_password
+```
+
+Set `GAME_DATABASE_URL` before starting the server if you want a different database. Only chunks that receive edits are written to the database. If a chunk has no `changed_chunks` row, it is treated as unmodified and the Voxel Play world seed/generated terrain is used.
+
+For droplet-style deploys, copy `.env.example` to `.env` and set the hostname used by nginx:
+
+```sh
+APP_DOMAIN=dev.augmego.ca
+```
+
+Use `APP_DOMAIN=prod.augmego.ca` or another host name for a different environment. If `.env` is missing, compose defaults to `dev.augmego.ca`.
 
 ## 2. Test in the Unity Editor
 
@@ -40,6 +57,7 @@ To test a second player, run another Unity editor instance, or make a standalone
 The included `docker-compose.yml` exposes nginx on HTTP port `80` and UDP port `7777`. Because nginx owns public UDP `7777`, run the standalone game server on local UDP `7778` when testing through nginx:
 
 ```sh
+docker compose up -d postgres
 dotnet run --project Server/BasicUdpGameServer -- 7778
 docker compose up -d
 ```
@@ -51,6 +69,8 @@ Make sure `dev.augmego.ca` resolves on the device that is running the game. A Ma
 The client includes a session id in its UDP packets, and the server uses that id instead of the client's source port as the player key. This matters when traffic goes through nginx or NAT, because UDP proxy mappings can be recycled even while the game is still running.
 
 Voxel edits use sequence numbers. Clients include the last applied edit sequence in their regular packets, and the server resends missed edits when needed. Edits are sent as integer voxel cells and reconstructed at voxel centers on the receiving client. This is still a prototype transport, but it avoids the easiest UDP packet-loss desync.
+
+On server startup, persisted edits are loaded from Postgres and replayed through the same sequence system, so block changes survive a server restart.
 
 ## 3. Test on an iPhone over Wi-Fi
 
@@ -73,7 +93,7 @@ This is a prototype transport and game loop. Good next steps are:
 
 - Add Relay/Lobby or your own matchmaking so phones do not need raw IP addresses.
 - Add sequence numbers and interpolation buffering for smoother remote motion.
-- Persist voxel edits on the server if you want the forest changes to survive a server restart.
+- Add chunk snapshot compaction once edit logs become too large.
 - Add authentication before accepting public traffic.
 - Package the server in Docker for cloud hosting.
 - Move from text packets to compact binary packets when gameplay grows.
