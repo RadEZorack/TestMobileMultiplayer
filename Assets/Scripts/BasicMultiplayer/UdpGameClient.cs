@@ -35,6 +35,7 @@ namespace BasicMultiplayer
 
         private readonly ConcurrentQueue<string> _incomingMessages = new();
         private readonly Dictionary<int, PlayerSnapshot> _players = new();
+        private readonly SortedDictionary<long, VoxelEditMessage> _pendingVoxelEditsBySequence = new();
         private readonly object _socketLock = new();
         private readonly string _clientSessionId = Guid.NewGuid().ToString("N");
 
@@ -44,7 +45,9 @@ namespace BasicMultiplayer
         private float _inputSendTimer;
         private float _helloTimer;
         private int _inputSequence;
+        private int _voxelEditSequence;
         private int _localPlayerId;
+        private long _lastAppliedVoxelEditSequence;
         private string _status = "Disconnected";
         private Vector2 _moveInput;
         private Vector2 _lookInput;
@@ -62,6 +65,7 @@ namespace BasicMultiplayer
         public Vector2 MoveInput => _moveInput;
         public Vector2 LookInput => _lookInput;
         public float MovementYawDegrees { get; set; }
+        public event Action<VoxelEditMessage> VoxelEditReceived;
 
         private void Start()
         {
@@ -137,6 +141,7 @@ namespace BasicMultiplayer
                 _isRunning = true;
                 _localPlayerId = 0;
                 _players.Clear();
+                ResetVoxelEditSync();
                 ClearIncomingMessages();
 
                 _receiveThread = new Thread(ReceiveLoop)
@@ -246,6 +251,10 @@ namespace BasicMultiplayer
                     ParseState(parts);
                     break;
 
+                case "EDIT":
+                    ParseVoxelEdit(parts);
+                    break;
+
                 case "ERROR":
                     _status = message;
                     break;
@@ -274,20 +283,72 @@ namespace BasicMultiplayer
             }
         }
 
+        private void ParseVoxelEdit(string[] parts)
+        {
+            if (parts.Length < 7
+                || !long.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var sequence)
+                || !int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var playerId)
+                || !TryParseVoxelEditAction(parts[3], out var action)
+                || !int.TryParse(parts[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out var x)
+                || !int.TryParse(parts[5], NumberStyles.Integer, CultureInfo.InvariantCulture, out var y)
+                || !int.TryParse(parts[6], NumberStyles.Integer, CultureInfo.InvariantCulture, out var z))
+            {
+                return;
+            }
+
+            var voxelType = parts.Length > 7 ? parts[7] : "marker";
+            QueueVoxelEdit(new VoxelEditMessage(sequence, playerId, action, new Vector3Int(x, y, z), voxelType));
+        }
+
+        private void QueueVoxelEdit(VoxelEditMessage edit)
+        {
+            if (edit.Sequence <= _lastAppliedVoxelEditSequence || _pendingVoxelEditsBySequence.ContainsKey(edit.Sequence))
+            {
+                return;
+            }
+
+            _pendingVoxelEditsBySequence[edit.Sequence] = edit;
+
+            while (_pendingVoxelEditsBySequence.TryGetValue(_lastAppliedVoxelEditSequence + 1, out var nextEdit))
+            {
+                _pendingVoxelEditsBySequence.Remove(nextEdit.Sequence);
+                _lastAppliedVoxelEditSequence = nextEdit.Sequence;
+                VoxelEditReceived?.Invoke(nextEdit);
+            }
+        }
+
         private void SendInput(Vector2 input)
         {
             Send(string.Format(
                 CultureInfo.InvariantCulture,
-                "INPUT2 {0} {1} {2:0.###} {3:0.###}",
+                "INPUT2 {0} {1} {2:0.###} {3:0.###} {4}",
                 _clientSessionId,
                 _inputSequence++,
                 input.x,
-                input.y));
+                input.y,
+                _lastAppliedVoxelEditSequence));
         }
 
         private void SendHello()
         {
-            Send($"HELLO2 {_clientSessionId} {SanitizeToken(playerName)}");
+            Send($"HELLO2 {_clientSessionId} {SanitizeToken(playerName, fallback: "Player")} {_lastAppliedVoxelEditSequence}");
+        }
+
+        public void SendVoxelEdit(VoxelEditAction action, Vector3Int cell, string voxelType)
+        {
+            var actionToken = action == VoxelEditAction.Remove ? "REMOVE" : "PLACE";
+
+            Send(string.Format(
+                CultureInfo.InvariantCulture,
+                "EDIT2 {0} {1} {2} {3} {4} {5} {6} {7}",
+                _clientSessionId,
+                _voxelEditSequence++,
+                actionToken,
+                cell.x,
+                cell.y,
+                cell.z,
+                SanitizeToken(voxelType, fallback: "marker"),
+                _lastAppliedVoxelEditSequence));
         }
 
         private void Send(string message)
@@ -813,6 +874,12 @@ namespace BasicMultiplayer
             }
         }
 
+        private void ResetVoxelEditSync()
+        {
+            _lastAppliedVoxelEditSequence = 0;
+            _pendingVoxelEditsBySequence.Clear();
+        }
+
         private IPAddress GetAnyAddressForCurrentSocket()
         {
             return _serverEndpoint != null && _serverEndpoint.AddressFamily == AddressFamily.InterNetworkV6
@@ -952,14 +1019,33 @@ namespace BasicMultiplayer
             return host;
         }
 
-        private static string SanitizeToken(string value)
+        private static string SanitizeToken(string value, string fallback)
         {
             if (string.IsNullOrWhiteSpace(value))
             {
-                return "Player";
+                return fallback;
             }
 
-            return value.Trim().Replace(' ', '_');
+            var sanitized = value.Trim().Replace(' ', '_');
+            return sanitized.Length == 0 ? fallback : sanitized;
+        }
+
+        private static bool TryParseVoxelEditAction(string value, out VoxelEditAction action)
+        {
+            switch (value.ToUpperInvariant())
+            {
+                case "PLACE":
+                    action = VoxelEditAction.Place;
+                    return true;
+
+                case "REMOVE":
+                    action = VoxelEditAction.Remove;
+                    return true;
+
+                default:
+                    action = default;
+                    return false;
+            }
         }
     }
 }

@@ -24,6 +24,7 @@ namespace BasicMultiplayer
         private const float JoystickClickScreenMaxY = 0.58f;
         private const float LeftJoystickClickScreenMaxX = 0.48f;
         private const float RightJoystickClickScreenMinX = 0.52f;
+        private const string MarkerVoxelEditType = "marker";
 
         private enum CameraZoomMode
         {
@@ -40,13 +41,16 @@ namespace BasicMultiplayer
         [SerializeField] private bool showBlockActionButtons = true;
         [SerializeField] private bool showCenterCrosshair = true;
         [SerializeField] private float blockInteractionDistance = 24f;
-        [SerializeField] private Color blockHighlightColor = new Color(1f, 0.88f, 0.18f, 0.8f);
+        [SerializeField] private Color blockHighlightColor = new Color(1f, 0.92f, 0.02f, 1f);
+        [Range(1f, 100f)]
+        [SerializeField] private float blockHighlightEdge = 20f;
         [SerializeField] private CameraZoomMode cameraZoomMode = CameraZoomMode.Far;
         [SerializeField] private bool paintPlayerTrails = false;
         [SerializeField] private int maxTrailCellsPerPlayer = 48;
 
         private readonly Dictionary<int, Vector3Int> _lastTrailCells = new();
         private readonly Dictionary<int, Queue<Vector3Int>> _trailCellsByPlayer = new();
+        private readonly Queue<VoxelEditMessage> _pendingVoxelEdits = new();
         private VoxelPlayEnvironment _environment;
         private VoxelDefinition _trailVoxel;
         private VoxelDefinition _markerVoxel;
@@ -55,6 +59,7 @@ namespace BasicMultiplayer
         private float _cameraPitch = 6f;
         private bool _worldReady;
         private bool _hasTargetHit;
+        private bool _highlightActive;
         private VoxelHitInfo _targetHitInfo;
 
         public bool IsFirstPersonCamera => cameraZoomMode == CameraZoomMode.FirstPerson;
@@ -65,6 +70,11 @@ namespace BasicMultiplayer
             {
                 client = GetComponent<UdpGameClient>();
             }
+
+            if (client != null)
+            {
+                client.VoxelEditReceived += HandleVoxelEditReceived;
+            }
         }
 
         private void Start()
@@ -72,6 +82,19 @@ namespace BasicMultiplayer
             DestroyPrimitivePrototypeArena();
             ConfigureForestLighting();
             CreateVoxelPlayEnvironment();
+        }
+
+        private void OnDestroy()
+        {
+            if (client != null)
+            {
+                client.VoxelEditReceived -= HandleVoxelEditReceived;
+            }
+
+            if (_environment != null)
+            {
+                _environment.OnInitialized -= OnVoxelPlayInitialized;
+            }
         }
 
         private void Update()
@@ -261,6 +284,7 @@ namespace BasicMultiplayer
             {
                 ConfigureCameraForVoxelWorld(_environment);
                 BuildSharedVoxelDemo();
+                ApplyPendingVoxelEdits();
             }
             else
             {
@@ -359,6 +383,7 @@ namespace BasicMultiplayer
             if (_environment == null || !_environment.initialized)
             {
                 _hasTargetHit = false;
+                _highlightActive = false;
                 return;
             }
 
@@ -366,8 +391,7 @@ namespace BasicMultiplayer
 
             if (camera == null)
             {
-                _hasTargetHit = false;
-                _environment.ClearHighlight();
+                ClearBlockHighlight();
                 return;
             }
 
@@ -383,16 +407,20 @@ namespace BasicMultiplayer
                 microVoxels: false,
                 ignoreWater: IgnoreWaterOption.IgnoreWater);
 
-            _hasTargetHit = hasHit;
-            _targetHitInfo = hitInfo;
-
             if (hasHit)
             {
-                _environment.VoxelHighlight(ref _targetHitInfo, blockHighlightColor, edgeWidth: 0.02f, fadeAmplitude: 0.35f);
+                if (!_highlightActive || hitInfo.voxelCenter != _targetHitInfo.voxelCenter || hitInfo.normal != _targetHitInfo.normal)
+                {
+                    _environment.RefreshVoxelHighlight();
+                }
+
+                _hasTargetHit = true;
+                _targetHitInfo = hitInfo;
+                _highlightActive = _environment.VoxelHighlight(ref _targetHitInfo, blockHighlightColor, blockHighlightEdge, fadeAmplitude: 0.35f);
             }
             else
             {
-                _environment.ClearHighlight();
+                ClearBlockHighlight();
             }
         }
 
@@ -442,9 +470,22 @@ namespace BasicMultiplayer
                 return;
             }
 
+            var cell = ToVoxelCell(_targetHitInfo.voxelCenter);
+
             if (_environment.VoxelDestroy(_targetHitInfo.voxelCenter))
             {
-                _hasTargetHit = false;
+                client.SendVoxelEdit(VoxelEditAction.Remove, cell, MarkerVoxelEditType);
+                ClearBlockHighlight();
+            }
+        }
+
+        private void ClearBlockHighlight()
+        {
+            _hasTargetHit = false;
+            _highlightActive = false;
+
+            if (_environment != null)
+            {
                 _environment.ClearHighlight();
             }
         }
@@ -470,12 +511,65 @@ namespace BasicMultiplayer
                 return;
             }
 
-            _environment.VoxelPlace(placePosition, voxel);
-            UpdateBlockTarget();
+            if (_environment.VoxelPlace(placePosition, voxel, false, default(Color), 1f))
+            {
+                client.SendVoxelEdit(VoxelEditAction.Place, ToVoxelCell(placePosition), MarkerVoxelEditType);
+                UpdateBlockTarget();
+            }
+        }
+
+        private void HandleVoxelEditReceived(VoxelEditMessage edit)
+        {
+            if (!_worldReady || _environment == null || !_environment.initialized)
+            {
+                _pendingVoxelEdits.Enqueue(edit);
+                return;
+            }
+
+            ApplyVoxelEdit(edit);
+        }
+
+        private void ApplyPendingVoxelEdits()
+        {
+            while (_pendingVoxelEdits.Count > 0)
+            {
+                ApplyVoxelEdit(_pendingVoxelEdits.Dequeue());
+            }
+        }
+
+        private void ApplyVoxelEdit(VoxelEditMessage edit)
+        {
+            if (_environment == null || !_environment.initialized)
+            {
+                return;
+            }
+
+            var position = ToVoxelPosition(edit.Cell);
+
+            if (edit.Action == VoxelEditAction.Remove)
+            {
+                _environment.VoxelDestroy(position);
+                return;
+            }
+
+            if (!_environment.IsVoxelAtPosition(position))
+            {
+                _environment.VoxelPlace(position, GetBuildVoxel(edit.VoxelType));
+            }
         }
 
         private VoxelDefinition GetBuildVoxel()
         {
+            return GetBuildVoxel(MarkerVoxelEditType);
+        }
+
+        private VoxelDefinition GetBuildVoxel(string voxelType)
+        {
+            if (voxelType == "trail")
+            {
+                return _trailVoxel != null ? _trailVoxel : _markerVoxel != null ? _markerVoxel : _environment.defaultVoxel;
+            }
+
             return _markerVoxel != null ? _markerVoxel : _trailVoxel != null ? _trailVoxel : _environment.defaultVoxel;
         }
 
@@ -494,6 +588,19 @@ namespace BasicMultiplayer
             }
 
             return new Vector3Int(x, y, z);
+        }
+
+        private static Vector3Int ToVoxelCell(Vector3d position)
+        {
+            return new Vector3Int(
+                Mathf.FloorToInt((float)position.x),
+                Mathf.FloorToInt((float)position.y),
+                Mathf.FloorToInt((float)position.z));
+        }
+
+        private static Vector3 ToVoxelPosition(Vector3Int cell)
+        {
+            return new Vector3(cell.x + 0.5f, cell.y + 0.5f, cell.z + 0.5f);
         }
 
         private void UpdateCameraFollow()

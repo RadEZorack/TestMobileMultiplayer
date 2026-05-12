@@ -6,7 +6,7 @@ This project now has a deliberately small client/server multiplayer loop:
 - Unity client scripts: `Assets/Scripts/BasicMultiplayer`
 - Default UDP port: `7777`
 
-The server is authoritative for player positions. Clients send only movement intent; the server simulates positions and broadcasts snapshots.
+The server is authoritative for player positions. Clients send only movement intent; the server simulates positions and broadcasts snapshots. Voxel block edits are also relayed through the server so every connected client applies the same place/remove sequence.
 
 When Voxel Play 3 is installed, the sample scene creates a runtime Voxel Play world. It now prefers the included `HQForest` world, enables trees/vegetation/clouds, and places a small multiplayer marker glade on the terrain.
 
@@ -31,6 +31,8 @@ The connection overlay is hidden by default. For manual host/port testing, enabl
 
 Tap the `CAM` button, or press `C` in the editor, to cycle the camera from far chase to close chase to first person. Movement is camera-relative, so turning with the right joystick also changes the direction the left joystick considers forward.
 
+Aim with the center crosshair. Use the on-screen `L` button or left mouse button to remove the highlighted voxel, and the `R` button or right mouse button to place a voxel on the highlighted face. These edits are sent over UDP and replayed on other clients.
+
 To test a second player, run another Unity editor instance, or make a standalone desktop build and connect both to `127.0.0.1`.
 
 ## Optional nginx UDP front door
@@ -47,6 +49,8 @@ Then connect clients to `dev.augmego.ca` on port `7777`.
 Make sure `dev.augmego.ca` resolves on the device that is running the game. A Mac `/etc/hosts` entry only affects the Mac; an iPhone needs public DNS, router/local DNS, or a direct IP address in the game overlay.
 
 The client includes a session id in its UDP packets, and the server uses that id instead of the client's source port as the player key. This matters when traffic goes through nginx or NAT, because UDP proxy mappings can be recycled even while the game is still running.
+
+Voxel edits use sequence numbers. Clients include the last applied edit sequence in their regular packets, and the server resends missed edits when needed. Edits are sent as integer voxel cells and reconstructed at voxel centers on the receiving client. This is still a prototype transport, but it avoids the easiest UDP packet-loss desync.
 
 ## 3. Test on an iPhone over Wi-Fi
 
@@ -69,6 +73,7 @@ This is a prototype transport and game loop. Good next steps are:
 
 - Add Relay/Lobby or your own matchmaking so phones do not need raw IP addresses.
 - Add sequence numbers and interpolation buffering for smoother remote motion.
+- Persist voxel edits on the server if you want the forest changes to survive a server restart.
 - Add authentication before accepting public traffic.
 - Package the server in Docker for cloud hosting.
 - Move from text packets to compact binary packets when gameplay grows.
