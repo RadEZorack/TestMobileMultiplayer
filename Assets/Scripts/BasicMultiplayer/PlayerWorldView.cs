@@ -6,13 +6,15 @@ namespace BasicMultiplayer
 {
     public sealed class PlayerWorldView : MonoBehaviour
     {
-        private const float AvatarCenterHeight = 0.75f;
+        private const float AvatarCenterHeight = VoxelPlayMultiplayerDemo.PlayerAvatarCenterHeight;
 
         [SerializeField] private UdpGameClient client;
         [SerializeField] private VoxelPlayMultiplayerDemo voxelPlayDemo;
+        [SerializeField] private float climbSpeedBlocksPerSecond = 3.25f;
+        [SerializeField] private float fallSpeedBlocksPerSecond = 12f;
 
         private readonly Dictionary<int, Transform> _avatars = new();
-        private Material _localMaterial;
+        private readonly Dictionary<int, float> _displayedFootYByPlayer = new();
         private Material _remoteMaterial;
 
         private void Awake()
@@ -27,7 +29,6 @@ namespace BasicMultiplayer
                 voxelPlayDemo = GetComponent<VoxelPlayMultiplayerDemo>();
             }
 
-            _localMaterial = BasicMultiplayerMaterials.Create(new Color(0.1f, 0.75f, 1f));
             _remoteMaterial = BasicMultiplayerMaterials.Create(new Color(1f, 0.64f, 0.15f));
         }
 
@@ -44,6 +45,12 @@ namespace BasicMultiplayer
             {
                 var id = pair.Key;
                 var snapshot = pair.Value;
+
+                if (id == client.LocalPlayerId)
+                {
+                    continue;
+                }
+
                 seenIds.Add(id);
 
                 if (!_avatars.TryGetValue(id, out var avatar))
@@ -52,16 +59,16 @@ namespace BasicMultiplayer
                     _avatars[id] = avatar;
                 }
 
-                var targetPosition = GetTargetPosition(snapshot.Position);
+                var targetPosition = GetTargetPosition(id, snapshot.Position);
                 avatar.position = Vector3.Lerp(avatar.position, targetPosition, 18f * Time.deltaTime);
                 FaceLabelToCamera(avatar);
-                SetAvatarVisible(avatar, !ShouldHideAvatar(id));
+                SetAvatarVisible(avatar, isVisible: true);
 
                 var renderer = avatar.GetComponentInChildren<Renderer>();
 
                 if (renderer != null && renderer.enabled)
                 {
-                    renderer.sharedMaterial = id == client.LocalPlayerId ? _localMaterial : _remoteMaterial;
+                    renderer.sharedMaterial = _remoteMaterial;
                 }
             }
 
@@ -79,6 +86,7 @@ namespace BasicMultiplayer
             {
                 Destroy(_avatars[id].gameObject);
                 _avatars.Remove(id);
+                _displayedFootYByPlayer.Remove(id);
             }
         }
 
@@ -102,13 +110,6 @@ namespace BasicMultiplayer
             return avatar.transform;
         }
 
-        private bool ShouldHideAvatar(int playerId)
-        {
-            return playerId == client.LocalPlayerId
-                && voxelPlayDemo != null
-                && voxelPlayDemo.IsFirstPersonCamera;
-        }
-
         private static void SetAvatarVisible(Transform avatar, bool isVisible)
         {
             foreach (var renderer in avatar.GetComponentsInChildren<Renderer>())
@@ -117,17 +118,46 @@ namespace BasicMultiplayer
             }
         }
 
-        private static Vector3 GetTargetPosition(Vector2 serverPosition)
+        private Vector3 GetTargetPosition(int playerId, Vector2 serverPosition)
         {
-            var terrainHeight = 0f;
-            var environment = VoxelPlayEnvironment.instance;
+            var worldPosition = voxelPlayDemo != null
+                ? voxelPlayDemo.GetPlayerWorldPosition(serverPosition)
+                : serverPosition;
 
-            if (environment != null && environment.initialized)
+            var terrainHeight = 0f;
+
+            if (voxelPlayDemo != null && voxelPlayDemo.TryGetPlayerTargetFootY(playerId, serverPosition, out var targetFootY))
             {
-                terrainHeight = environment.GetTerrainHeight(serverPosition.x, serverPosition.y, includeWater: false);
+                terrainHeight = targetFootY;
+            }
+            else
+            {
+                var environment = VoxelPlayEnvironment.instance;
+
+                if (environment != null && environment.initialized)
+                {
+                    terrainHeight = environment.GetTerrainHeight(worldPosition.x, worldPosition.y, includeWater: false);
+                }
             }
 
-            return new Vector3(serverPosition.x, terrainHeight + AvatarCenterHeight, serverPosition.y);
+            var displayedFootY = GetDisplayedFootY(playerId, terrainHeight);
+            return new Vector3(worldPosition.x, displayedFootY + AvatarCenterHeight, worldPosition.y);
+        }
+
+        private float GetDisplayedFootY(int playerId, float targetFootY)
+        {
+            if (!_displayedFootYByPlayer.TryGetValue(playerId, out var displayedFootY))
+            {
+                _displayedFootYByPlayer[playerId] = targetFootY;
+                return targetFootY;
+            }
+
+            var speed = targetFootY > displayedFootY
+                ? climbSpeedBlocksPerSecond
+                : fallSpeedBlocksPerSecond;
+            displayedFootY = Mathf.MoveTowards(displayedFootY, targetFootY, speed * Time.deltaTime);
+            _displayedFootYByPlayer[playerId] = displayedFootY;
+            return displayedFootY;
         }
 
         private static void FaceLabelToCamera(Transform avatar)

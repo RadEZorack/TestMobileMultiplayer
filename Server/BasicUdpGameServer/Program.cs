@@ -44,6 +44,7 @@ internal sealed class BasicUdpGameServer : IDisposable
     private const float PlayerSpeed = 4.5f;
     private const float ArenaHalfWidth = 24f;
     private const float ArenaHalfHeight = 16f;
+    private const float MaxTrustedPlayerCoordinate = 4096f;
     private const int MaxVoxelCoordinate = 4096;
     private static readonly TimeSpan ClientTimeout = TimeSpan.FromSeconds(10);
 
@@ -178,7 +179,7 @@ internal sealed class BasicUdpGameServer : IDisposable
                 }
 
                 var inputClientKey = GetSessionKey(parts[1], endpointKey);
-                var inputPlayer = HandleInput(inputClientKey, endpoint, parts, xIndex: 3, yIndex: 4);
+                var inputPlayer = HandleInput(inputClientKey, endpoint, parts, xIndex: 3, yIndex: 4, positionXIndex: 6, positionYIndex: 7);
                 SendPendingVoxelEdits(inputPlayer, ParseAcknowledgedVoxelEditSequence(parts, 5));
                 break;
 
@@ -210,7 +211,13 @@ internal sealed class BasicUdpGameServer : IDisposable
 
         if (sendWelcome || isNewPlayer)
         {
-            Send(player.Endpoint, $"WELCOME {player.Id} {TickRate.ToString("0", CultureInfo.InvariantCulture)}");
+            Send(player.Endpoint, string.Format(
+                CultureInfo.InvariantCulture,
+                "WELCOME {0} {1:0} {2:0.###} {3:0.###}",
+                player.Id,
+                TickRate,
+                player.X,
+                player.Y));
         }
 
         if (isNewPlayer)
@@ -225,7 +232,14 @@ internal sealed class BasicUdpGameServer : IDisposable
         return player;
     }
 
-    private Player HandleInput(string clientKey, IPEndPoint endpoint, string[] parts, int xIndex, int yIndex)
+    private Player HandleInput(
+        string clientKey,
+        IPEndPoint endpoint,
+        string[] parts,
+        int xIndex,
+        int yIndex,
+        int positionXIndex = -1,
+        int positionYIndex = -1)
     {
         var existingPlayer = RegisterOrRefreshPlayer(clientKey, endpoint, "Player", sendWelcome: false);
 
@@ -243,6 +257,17 @@ internal sealed class BasicUdpGameServer : IDisposable
 
             existingPlayer.InputX = inputX;
             existingPlayer.InputY = inputY;
+        }
+
+        if (positionXIndex >= 0
+            && positionYIndex >= 0
+            && parts.Length > positionYIndex
+            && float.TryParse(parts[positionXIndex], NumberStyles.Float, CultureInfo.InvariantCulture, out var positionX)
+            && float.TryParse(parts[positionYIndex], NumberStyles.Float, CultureInfo.InvariantCulture, out var positionY))
+        {
+            existingPlayer.X = ClampTrustedPlayerCoordinate(positionX);
+            existingPlayer.Y = ClampTrustedPlayerCoordinate(positionY);
+            existingPlayer.UsesTrustedClientPosition = true;
         }
 
         return existingPlayer;
@@ -311,8 +336,11 @@ internal sealed class BasicUdpGameServer : IDisposable
                 continue;
             }
 
-            player.X = Math.Clamp(player.X + player.InputX * PlayerSpeed * deltaTime, -ArenaHalfWidth, ArenaHalfWidth);
-            player.Y = Math.Clamp(player.Y + player.InputY * PlayerSpeed * deltaTime, -ArenaHalfHeight, ArenaHalfHeight);
+            if (!player.UsesTrustedClientPosition)
+            {
+                player.X = Math.Clamp(player.X + player.InputX * PlayerSpeed * deltaTime, -ArenaHalfWidth, ArenaHalfWidth);
+                player.Y = Math.Clamp(player.Y + player.InputY * PlayerSpeed * deltaTime, -ArenaHalfHeight, ArenaHalfHeight);
+            }
         }
     }
 
@@ -412,15 +440,30 @@ internal sealed class BasicUdpGameServer : IDisposable
             return;
         }
 
+        var tick = Interlocked.Increment(ref _tick);
+
+        foreach (var recipient in players)
+        {
+            Send(recipient.Endpoint, FormatSnapshotForRecipient(players, recipient, tick, now));
+        }
+    }
+
+    private static string FormatSnapshotForRecipient(Player[] players, Player recipient, long tick, DateTimeOffset now)
+    {
         var builder = new StringBuilder();
         builder
             .Append("STATE ")
-            .Append(Interlocked.Increment(ref _tick))
+            .Append(tick)
             .Append(' ')
             .Append(now.ToUnixTimeMilliseconds());
 
         foreach (var player in players)
         {
+            if (player.Id == recipient.Id)
+            {
+                continue;
+            }
+
             builder
                 .Append(' ')
                 .Append(player.Id)
@@ -430,12 +473,7 @@ internal sealed class BasicUdpGameServer : IDisposable
                 .Append(player.Y.ToString("0.###", CultureInfo.InvariantCulture));
         }
 
-        var snapshot = builder.ToString();
-
-        foreach (var player in players)
-        {
-            Send(player.Endpoint, snapshot);
-        }
+        return builder.ToString();
     }
 
     private void Send(IPEndPoint endpoint, string message)
@@ -500,6 +538,16 @@ internal sealed class BasicUdpGameServer : IDisposable
             && long.TryParse(parts[index], NumberStyles.Integer, CultureInfo.InvariantCulture, out var sequence)
             ? Math.Max(0, sequence)
             : 0;
+    }
+
+    private static float ClampTrustedPlayerCoordinate(float coordinate)
+    {
+        if (float.IsNaN(coordinate) || float.IsInfinity(coordinate))
+        {
+            return 0f;
+        }
+
+        return Math.Clamp(coordinate, -MaxTrustedPlayerCoordinate, MaxTrustedPlayerCoordinate);
     }
 
     private static bool TryParseVoxelCoordinate(string value, out int coordinate)
@@ -569,6 +617,7 @@ internal sealed class BasicUdpGameServer : IDisposable
         public float Y { get; set; }
         public float InputX { get; set; }
         public float InputY { get; set; }
+        public bool UsesTrustedClientPosition { get; set; }
         public long LastVoxelEditAcknowledged { get; set; }
         public DateTimeOffset LastSeen { get; set; }
     }

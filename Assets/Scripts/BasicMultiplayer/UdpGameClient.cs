@@ -19,6 +19,8 @@ namespace BasicMultiplayer
     {
         private const float InputSendRate = 30f;
         private const float ReconnectHelloInterval = 1f;
+        private const float PlayerSpeed = 4.5f;
+        private const float MaxTrustedPlayerCoordinate = 4096f;
         private const float JoystickRadiusPixels = 105f;
         private const float LeftJoystickScreenMax = 0.48f;
         private const float RightJoystickScreenMin = 0.52f;
@@ -51,6 +53,7 @@ namespace BasicMultiplayer
         private string _status = "Disconnected";
         private Vector2 _moveInput;
         private Vector2 _lookInput;
+        private Vector2 _localPosition;
         private Vector2 _moveJoystickOrigin;
         private Vector2 _moveJoystickCurrent;
         private Vector2 _lookJoystickOrigin;
@@ -58,13 +61,17 @@ namespace BasicMultiplayer
         private int _moveJoystickPointerId = NoPointerId;
         private int _lookJoystickPointerId = NoPointerId;
         private bool _isRunning;
+        private bool _hasLocalPosition;
 
         public IReadOnlyDictionary<int, PlayerSnapshot> Players => _players;
         public int LocalPlayerId => _localPlayerId;
         public bool IsConnected => _udp != null;
+        public bool HasLocalPosition => _hasLocalPosition;
+        public Vector2 LocalPosition => _localPosition;
         public Vector2 MoveInput => _moveInput;
         public Vector2 LookInput => _lookInput;
         public float MovementYawDegrees { get; set; }
+        public Func<Vector2, Vector2> MoveInputFilter { get; set; }
         public event Action<VoxelEditMessage> VoxelEditReceived;
 
         private void Start()
@@ -81,6 +88,7 @@ namespace BasicMultiplayer
         {
             DrainIncomingMessages();
             ReadLocalInput();
+            SimulateLocalPlayerMovement();
 
             if (_udp == null)
             {
@@ -140,6 +148,8 @@ namespace BasicMultiplayer
                 _udp = udp;
                 _isRunning = true;
                 _localPlayerId = 0;
+                _hasLocalPosition = false;
+                _localPosition = Vector2.zero;
                 _players.Clear();
                 ResetVoxelEditSync();
                 ClearIncomingMessages();
@@ -168,8 +178,16 @@ namespace BasicMultiplayer
         {
             CloseSocket();
             _localPlayerId = 0;
+            _hasLocalPosition = false;
+            _localPosition = Vector2.zero;
             _players.Clear();
             _status = "Disconnected";
+        }
+
+        public bool TryGetLocalPosition(out Vector2 position)
+        {
+            position = _localPosition;
+            return _hasLocalPosition;
         }
 
         private void CloseSocket()
@@ -241,8 +259,17 @@ namespace BasicMultiplayer
                 case "WELCOME":
                     if (parts.Length >= 2 && int.TryParse(parts[1], out var playerId))
                     {
+                        var playerChanged = playerId != _localPlayerId;
                         _localPlayerId = playerId;
                         _status = $"Connected as player {playerId}";
+
+                        if (parts.Length >= 5
+                            && TryParseFloat(parts[3], out var spawnX)
+                            && TryParseFloat(parts[4], out var spawnY)
+                            && (!_hasLocalPosition || playerChanged))
+                        {
+                            SetLocalPosition(new Vector2(spawnX, spawnY));
+                        }
                     }
 
                     break;
@@ -263,7 +290,7 @@ namespace BasicMultiplayer
 
         private void ParseState(string[] parts)
         {
-            if (parts.Length < 6)
+            if (parts.Length < 3)
             {
                 return;
             }
@@ -273,9 +300,19 @@ namespace BasicMultiplayer
             for (var index = 3; index + 2 < parts.Length; index += 3)
             {
                 if (!int.TryParse(parts[index], out var id)
-                    || !float.TryParse(parts[index + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out var x)
-                    || !float.TryParse(parts[index + 2], NumberStyles.Float, CultureInfo.InvariantCulture, out var y))
+                    || !TryParseFloat(parts[index + 1], out var x)
+                    || !TryParseFloat(parts[index + 2], out var y))
                 {
+                    continue;
+                }
+
+                if (id == _localPlayerId)
+                {
+                    if (!_hasLocalPosition)
+                    {
+                        SetLocalPosition(new Vector2(x, y));
+                    }
+
                     continue;
                 }
 
@@ -319,6 +356,21 @@ namespace BasicMultiplayer
 
         private void SendInput(Vector2 input)
         {
+            if (_hasLocalPosition)
+            {
+                Send(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "INPUT2 {0} {1} {2:0.###} {3:0.###} {4} {5:0.###} {6:0.###}",
+                    _clientSessionId,
+                    _inputSequence++,
+                    input.x,
+                    input.y,
+                    _lastAppliedVoxelEditSequence,
+                    _localPosition.x,
+                    _localPosition.y));
+                return;
+            }
+
             Send(string.Format(
                 CultureInfo.InvariantCulture,
                 "INPUT2 {0} {1} {2:0.###} {3:0.###} {4}",
@@ -391,8 +443,33 @@ namespace BasicMultiplayer
             ReadLegacyMouseJoystickInput(ref move, ref look);
 #endif
 
-            _moveInput = TransformMoveInput(Vector2.ClampMagnitude(move, 1f));
+            var worldMoveInput = TransformMoveInput(Vector2.ClampMagnitude(move, 1f));
+
+            if (MoveInputFilter != null)
+            {
+                worldMoveInput = Vector2.ClampMagnitude(MoveInputFilter(worldMoveInput), 1f);
+            }
+
+            _moveInput = worldMoveInput;
             _lookInput = Vector2.ClampMagnitude(look, 1f);
+        }
+
+        private void SimulateLocalPlayerMovement()
+        {
+            if (_localPlayerId == 0 || !_hasLocalPosition)
+            {
+                return;
+            }
+
+            _localPosition += _moveInput * PlayerSpeed * Time.deltaTime;
+            _localPosition.x = Mathf.Clamp(_localPosition.x, -MaxTrustedPlayerCoordinate, MaxTrustedPlayerCoordinate);
+            _localPosition.y = Mathf.Clamp(_localPosition.y, -MaxTrustedPlayerCoordinate, MaxTrustedPlayerCoordinate);
+        }
+
+        private void SetLocalPosition(Vector2 position)
+        {
+            _localPosition = position;
+            _hasLocalPosition = true;
         }
 
         private Vector2 TransformMoveInput(Vector2 input)
@@ -865,6 +942,11 @@ namespace BasicMultiplayer
         private static Vector2 ToGuiPosition(Vector2 screenPosition)
         {
             return new Vector2(screenPosition.x, Screen.height - screenPosition.y);
+        }
+
+        private static bool TryParseFloat(string value, out float parsed)
+        {
+            return float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed);
         }
 
         private void ClearIncomingMessages()

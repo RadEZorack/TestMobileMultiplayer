@@ -17,14 +17,19 @@ namespace BasicMultiplayer
         private const string ForestMarkerVoxelResourcePath = "Worlds/HQForest/Voxels/Forest/HQ_VoxelForestDirt";
         private const float CameraYawDegreesPerSecond = 150f;
         private const float CameraPitchDegreesPerSecond = 92f;
-        private const float MinCameraPitch = -38f;
-        private const float MaxCameraPitch = 42f;
+        private const float MinCameraPitch = -88f;
+        private const float MaxCameraPitch = 88f;
         private const float BlockActionButtonSize = 64f;
         private const float BlockActionButtonGap = 10f;
         private const float JoystickClickScreenMaxY = 0.58f;
         private const float LeftJoystickClickScreenMaxX = 0.48f;
         private const float RightJoystickClickScreenMinX = 0.52f;
         private const string MarkerVoxelEditType = "marker";
+        private const int PlayerClearanceBlocks = 2;
+        private const float EstimatedPlayerWalkSpeed = 4.5f;
+        public const float PlayerAvatarCenterHeight = 0.75f;
+        private const float PlayerCameraFocusHeight = 1.35f;
+        private const float PlayerCameraHeadHeight = 1.65f;
 
         private enum CameraZoomMode
         {
@@ -47,19 +52,34 @@ namespace BasicMultiplayer
         [SerializeField] private CameraZoomMode cameraZoomMode = CameraZoomMode.Far;
         [SerializeField] private bool paintPlayerTrails = false;
         [SerializeField] private int maxTrailCellsPerPlayer = 48;
+        [SerializeField] private int maxPlayerClimbScanBlocks = 512;
+        [SerializeField] private float playerClimbSpeedBlocksPerSecond = 3.25f;
+        [SerializeField] private float playerFallSpeedBlocksPerSecond = 12f;
+        [SerializeField] private float movementCollisionProbeDistance = 0.35f;
+        [SerializeField] private float playerCollisionRadius = 0.38f;
+        [SerializeField] private float playerSupportProbeRadiusScale = 0.92f;
+        [SerializeField] private float playerFootProbeHeight = 0.35f;
+        [SerializeField] private float playerHeadProbeHeight = 1.55f;
 
         private readonly Dictionary<int, Vector3Int> _lastTrailCells = new();
         private readonly Dictionary<int, Queue<Vector3Int>> _trailCellsByPlayer = new();
         private readonly Queue<VoxelEditMessage> _pendingVoxelEdits = new();
+        private static readonly Vector2 PlayerVoxelCenterOffset = new Vector2(0.5f, 0.5f);
         private VoxelPlayEnvironment _environment;
         private VoxelDefinition _trailVoxel;
         private VoxelDefinition _markerVoxel;
         private Vector3 _cameraForward = Vector3.forward;
         private float _cameraYaw;
-        private float _cameraPitch = 6f;
+        private float _cameraPitch = 22f;
         private bool _worldReady;
         private bool _hasTargetHit;
         private bool _highlightActive;
+        private bool _hasSmoothedLocalGroundY;
+        private bool _hasLocalClimbTarget;
+        private float _smoothedLocalGroundY;
+        private float _localClimbTargetFootY;
+        private int _smoothedLocalGroundFrame = -1;
+        private Transform _localPlayerRig;
         private VoxelHitInfo _targetHitInfo;
 
         public bool IsFirstPersonCamera => cameraZoomMode == CameraZoomMode.FirstPerson;
@@ -74,6 +94,7 @@ namespace BasicMultiplayer
             if (client != null)
             {
                 client.VoxelEditReceived += HandleVoxelEditReceived;
+                client.MoveInputFilter = FilterMoveInput;
             }
         }
 
@@ -89,11 +110,19 @@ namespace BasicMultiplayer
             if (client != null)
             {
                 client.VoxelEditReceived -= HandleVoxelEditReceived;
+                client.MoveInputFilter = null;
             }
 
             if (_environment != null)
             {
                 _environment.OnInitialized -= OnVoxelPlayInitialized;
+            }
+
+            if (_localPlayerRig != null)
+            {
+                _localPlayerRig.DetachChildren();
+                Destroy(_localPlayerRig.gameObject);
+                _localPlayerRig = null;
             }
         }
 
@@ -327,7 +356,7 @@ namespace BasicMultiplayer
 
         private void PaintTrail(int playerId, Vector2 position)
         {
-            var cell = GetSurfaceCell(position);
+            var cell = GetSurfaceCell(GetPlayerWorldPosition(position));
 
             if (_lastTrailCells.TryGetValue(playerId, out var lastCell) && lastCell == cell)
             {
@@ -505,15 +534,16 @@ namespace BasicMultiplayer
             }
 
             var placePosition = _targetHitInfo.voxelCenter + _targetHitInfo.normal;
+            var placeCell = ToVoxelCell(placePosition);
 
-            if (_environment.IsVoxelAtPosition(placePosition))
+            if (_environment.IsVoxelAtPosition(placePosition) || !CanPlaceBlockWithPlayerClearance(placeCell))
             {
                 return;
             }
 
             if (_environment.VoxelPlace(placePosition, voxel, false, default(Color), 1f))
             {
-                client.SendVoxelEdit(VoxelEditAction.Place, ToVoxelCell(placePosition), MarkerVoxelEditType);
+                client.SendVoxelEdit(VoxelEditAction.Place, placeCell, MarkerVoxelEditType);
                 UpdateBlockTarget();
             }
         }
@@ -575,7 +605,7 @@ namespace BasicMultiplayer
 
         private Vector3Int GetSurfaceCell(Vector2 position)
         {
-            return GetSurfaceCell(Mathf.RoundToInt(position.x), Mathf.RoundToInt(position.y));
+            return GetSurfaceCell(Mathf.FloorToInt(position.x), Mathf.FloorToInt(position.y));
         }
 
         private Vector3Int GetSurfaceCell(int x, int z)
@@ -584,10 +614,376 @@ namespace BasicMultiplayer
 
             if (_environment != null && _environment.initialized)
             {
-                y = Mathf.RoundToInt(_environment.GetTerrainHeight(x, z, includeWater: false));
+                y = Mathf.RoundToInt(_environment.GetTerrainHeight(x + 0.5f, z + 0.5f, includeWater: false));
             }
 
             return new Vector3Int(x, y, z);
+        }
+
+        public bool TryGetPlayerFootCell(Vector2 serverPosition, out Vector3Int footCell)
+        {
+            return TryGetPlayerFootCellAtWorldPosition(GetPlayerWorldPosition(serverPosition), out footCell);
+        }
+
+        private bool TryGetPlayerFootCellAtWorldPosition(Vector2 worldPosition, out Vector3Int footCell)
+        {
+            footCell = default;
+
+            if (_environment == null || !_environment.initialized)
+            {
+                return false;
+            }
+
+            var found = false;
+            var bestY = int.MinValue;
+
+            for (var index = 0; index < 9; index++)
+            {
+                var samplePosition = GetSupportProbePosition(worldPosition, index);
+
+                if (!TryResolvePlayerFootCellAtPoint(samplePosition, out var sampleFootCell)
+                    || (found && sampleFootCell.y <= bestY))
+                {
+                    continue;
+                }
+
+                footCell = sampleFootCell;
+                bestY = sampleFootCell.y;
+                found = true;
+            }
+
+            return found;
+        }
+
+        private bool TryResolvePlayerFootCellAtPoint(Vector2 worldPosition, out Vector3Int footCell)
+        {
+            var x = Mathf.FloorToInt(worldPosition.x);
+            var z = Mathf.FloorToInt(worldPosition.y);
+            var baseY = Mathf.FloorToInt(_environment.GetTerrainHeight(worldPosition.x, worldPosition.y, includeWater: false));
+            return TryResolvePlayerFootCell(new Vector3Int(x, baseY, z), out footCell);
+        }
+
+        private Vector2 GetSupportProbePosition(Vector2 worldPosition, int index)
+        {
+            const float Diagonal = 0.70710678f;
+            var radius = Mathf.Max(0f, playerCollisionRadius * Mathf.Clamp01(playerSupportProbeRadiusScale));
+
+            return index switch
+            {
+                1 => worldPosition + new Vector2(radius, 0f),
+                2 => worldPosition + new Vector2(-radius, 0f),
+                3 => worldPosition + new Vector2(0f, radius),
+                4 => worldPosition + new Vector2(0f, -radius),
+                5 => worldPosition + new Vector2(radius * Diagonal, radius * Diagonal),
+                6 => worldPosition + new Vector2(radius * Diagonal, -radius * Diagonal),
+                7 => worldPosition + new Vector2(-radius * Diagonal, radius * Diagonal),
+                8 => worldPosition + new Vector2(-radius * Diagonal, -radius * Diagonal),
+                _ => worldPosition
+            };
+        }
+
+        public bool TryGetPlayerTargetFootY(int playerId, Vector2 serverPosition, out float footY)
+        {
+            if (!TryGetPlayerFootCell(serverPosition, out var footCell))
+            {
+                footY = default;
+                return false;
+            }
+
+            footY = footCell.y;
+
+            if (client != null && playerId == client.LocalPlayerId && _hasLocalClimbTarget)
+            {
+                footY = Mathf.Max(footY, _localClimbTargetFootY);
+            }
+
+            return true;
+        }
+
+        public Vector2 GetPlayerWorldPosition(Vector2 serverPosition)
+        {
+            return serverPosition + PlayerVoxelCenterOffset;
+        }
+
+        public bool TryGetLocalPlayerRig(int playerId, Vector2 serverPosition, out Transform rig)
+        {
+            rig = null;
+
+            if (!_worldReady || client == null || playerId != client.LocalPlayerId)
+            {
+                return false;
+            }
+
+            rig = UpdateLocalPlayerRig(serverPosition);
+            return rig != null;
+        }
+
+        public bool TryGetDisplayedLocalFootY(int playerId, Vector2 serverPosition, out float footY)
+        {
+            if (client == null || playerId != client.LocalPlayerId)
+            {
+                footY = default;
+                return false;
+            }
+
+            if (_localPlayerRig != null)
+            {
+                footY = _localPlayerRig.position.y;
+                return true;
+            }
+
+            if (_hasSmoothedLocalGroundY)
+            {
+                footY = _smoothedLocalGroundY;
+                return true;
+            }
+
+            return TryGetPlayerTargetFootY(playerId, serverPosition, out footY);
+        }
+
+        private bool TryResolvePlayerFootCell(Vector3Int baseFootCell, out Vector3Int resolvedFootCell)
+        {
+            var maxScan = Mathf.Max(PlayerClearanceBlocks, maxPlayerClimbScanBlocks);
+
+            for (var offset = 0; offset <= maxScan; offset++)
+            {
+                var candidate = new Vector3Int(baseFootCell.x, baseFootCell.y + offset, baseFootCell.z);
+
+                if (HasPlayerClearance(candidate))
+                {
+                    resolvedFootCell = candidate;
+                    return true;
+                }
+            }
+
+            resolvedFootCell = baseFootCell;
+            return false;
+        }
+
+        private bool HasPlayerClearance(Vector3Int footCell)
+        {
+            for (var height = 0; height < PlayerClearanceBlocks; height++)
+            {
+                if (IsVoxelCellOccupied(new Vector3Int(footCell.x, footCell.y + height, footCell.z)))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private bool CanPlaceBlockWithPlayerClearance(Vector3Int placeCell)
+        {
+            if (client == null)
+            {
+                return true;
+            }
+
+            if (client.TryGetLocalPosition(out var localPosition)
+                && !CanPlaceBlockWithPlayerClearanceForPosition(placeCell, localPosition))
+            {
+                return false;
+            }
+
+            foreach (var pair in client.Players)
+            {
+                if (!CanPlaceBlockWithPlayerClearanceForPosition(placeCell, pair.Value.Position))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private bool CanPlaceBlockWithPlayerClearanceForPosition(Vector3Int placeCell, Vector2 playerPosition)
+        {
+            if (!TryGetPlayerFootCell(playerPosition, out var playerFootCell)
+                || placeCell.x != playerFootCell.x
+                || placeCell.z != playerFootCell.z
+                || placeCell.y < playerFootCell.y
+                || placeCell.y >= playerFootCell.y + PlayerClearanceBlocks)
+            {
+                return true;
+            }
+
+            var movedFootCell = new Vector3Int(playerFootCell.x, placeCell.y + 1, playerFootCell.z);
+            return HasPlayerClearanceAfterPlacement(movedFootCell, placeCell);
+        }
+
+        private bool HasPlayerClearanceAfterPlacement(Vector3Int footCell, Vector3Int placedCell)
+        {
+            for (var height = 0; height < PlayerClearanceBlocks; height++)
+            {
+                var checkedCell = new Vector3Int(footCell.x, footCell.y + height, footCell.z);
+
+                if (checkedCell == placedCell || IsVoxelCellOccupied(checkedCell))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private bool IsVoxelCellOccupied(Vector3Int cell)
+        {
+            return _environment != null
+                && _environment.initialized
+                && _environment.IsVoxelAtPosition(ToVoxelPosition(cell));
+        }
+
+        private Vector2 FilterMoveInput(Vector2 input)
+        {
+            if (!_worldReady
+                || _environment == null
+                || !_environment.initialized
+                || client == null
+                || client.LocalPlayerId == 0)
+            {
+                _hasLocalClimbTarget = false;
+                return input;
+            }
+
+            if (!client.TryGetLocalPosition(out var localPosition)
+                || !TryGetPlayerFootCell(localPosition, out var resolvedFootCell))
+            {
+                return Vector2.zero;
+            }
+
+            var localWorldPosition = GetPlayerWorldPosition(localPosition);
+            EnsureLocalGroundInitialized(resolvedFootCell.y);
+
+            if (input.sqrMagnitude < 0.001f)
+            {
+                _hasLocalClimbTarget = false;
+                return input;
+            }
+
+            if (resolvedFootCell.y > _smoothedLocalGroundY + 0.1f)
+            {
+                SetLocalClimbTarget(resolvedFootCell.y);
+                return Vector2.zero;
+            }
+
+            var currentFootCell = new Vector3Int(
+                Mathf.FloorToInt(localWorldPosition.x),
+                Mathf.FloorToInt(_smoothedLocalGroundY),
+                Mathf.FloorToInt(localWorldPosition.y));
+            var filtered = FilterMoveAxis(localWorldPosition, _smoothedLocalGroundY, currentFootCell, input, allowClimbTargetClear: true);
+
+            if (filtered.sqrMagnitude < 0.001f)
+            {
+                filtered.x = FilterMoveAxis(localWorldPosition, _smoothedLocalGroundY, currentFootCell, new Vector2(input.x, 0f), allowClimbTargetClear: false).x;
+                filtered.y = FilterMoveAxis(localWorldPosition, _smoothedLocalGroundY, currentFootCell, new Vector2(0f, input.y), allowClimbTargetClear: false).y;
+            }
+
+            if (filtered.sqrMagnitude < 0.001f)
+            {
+                return Vector2.zero;
+            }
+
+            return Vector2.ClampMagnitude(filtered, input.magnitude);
+        }
+
+        private Vector2 FilterMoveAxis(Vector2 currentPosition, float currentFootY, Vector3Int currentFootCell, Vector2 input, bool allowClimbTargetClear)
+        {
+            if (input.sqrMagnitude < 0.001f)
+            {
+                return Vector2.zero;
+            }
+
+            if (!TryGetPlayerBodyHit(currentPosition, currentFootY, input, out _))
+            {
+                if (allowClimbTargetClear)
+                {
+                    _hasLocalClimbTarget = false;
+                }
+
+                return input;
+            }
+
+            var probePosition = GetMovementProbePosition(currentPosition, input);
+
+            if (!TryGetPlayerFootCellAtWorldPosition(probePosition, out var probeFootCell))
+            {
+                return Vector2.zero;
+            }
+
+            if (probeFootCell.y <= currentFootCell.y)
+            {
+                return Vector2.zero;
+            }
+
+            SetLocalClimbTarget(probeFootCell.y);
+
+            if (_smoothedLocalGroundY < _localClimbTargetFootY - 0.1f)
+            {
+                return Vector2.zero;
+            }
+
+            var climbScale = Mathf.Clamp01(playerClimbSpeedBlocksPerSecond / EstimatedPlayerWalkSpeed);
+            return input * climbScale;
+        }
+
+        private void EnsureLocalGroundInitialized(float footY)
+        {
+            if (_hasSmoothedLocalGroundY)
+            {
+                return;
+            }
+
+            _smoothedLocalGroundY = footY;
+            _hasSmoothedLocalGroundY = true;
+        }
+
+        private void SetLocalClimbTarget(float footY)
+        {
+            _localClimbTargetFootY = _hasLocalClimbTarget
+                ? Mathf.Max(_localClimbTargetFootY, footY)
+                : footY;
+            _hasLocalClimbTarget = true;
+        }
+
+        private Vector2 GetMovementProbePosition(Vector2 currentPosition, Vector2 input)
+        {
+            var direction = input.normalized;
+            var distance = Mathf.Max(0.05f, playerCollisionRadius)
+                + Mathf.Max(0f, movementCollisionProbeDistance) * Mathf.Clamp01(input.magnitude);
+            return currentPosition + direction * distance;
+        }
+
+        private bool TryGetPlayerBodyHit(Vector2 currentPosition, float currentFootY, Vector2 input, out VoxelHitInfo hitInfo)
+        {
+            hitInfo = default;
+
+            if (input.sqrMagnitude < 0.001f)
+            {
+                return false;
+            }
+
+            var direction = new Vector3(input.x, 0f, input.y).normalized;
+            var distance = Mathf.Max(0.05f, playerCollisionRadius)
+                + Mathf.Max(0f, movementCollisionProbeDistance) * Mathf.Clamp01(input.magnitude);
+            return TryRayCastPlayerProbe(currentPosition, currentFootY + playerFootProbeHeight, direction, distance, out hitInfo)
+                || TryRayCastPlayerProbe(currentPosition, currentFootY + playerHeadProbeHeight, direction, distance, out hitInfo);
+        }
+
+        private bool TryRayCastPlayerProbe(Vector2 currentPosition, float probeY, Vector3 direction, float distance, out VoxelHitInfo hitInfo)
+        {
+            const float Skin = 0.03f;
+            var origin = new Vector3(currentPosition.x, probeY, currentPosition.y) - direction * Skin;
+            return _environment.RayCast(
+                origin,
+                direction,
+                out hitInfo,
+                distance + Skin,
+                minOpaque: 1,
+                colliderTypes: ColliderTypes.OnlyVoxels,
+                createChunksIfNeeded: false,
+                microVoxels: false,
+                ignoreWater: IgnoreWaterOption.IgnoreWater);
         }
 
         private static Vector3Int ToVoxelCell(Vector3d position)
@@ -603,9 +999,32 @@ namespace BasicMultiplayer
             return new Vector3(cell.x + 0.5f, cell.y + 0.5f, cell.z + 0.5f);
         }
 
+        private Transform UpdateLocalPlayerRig(Vector2 serverPosition)
+        {
+            var rig = GetOrCreateLocalPlayerRig();
+            var groundY = GetSmoothedLocalGroundY(serverPosition);
+            var playerWorldPosition = GetPlayerWorldPosition(serverPosition);
+            rig.SetPositionAndRotation(
+                new Vector3(playerWorldPosition.x, groundY, playerWorldPosition.y),
+                Quaternion.Euler(0f, _cameraYaw, 0f));
+            return rig;
+        }
+
+        private Transform GetOrCreateLocalPlayerRig()
+        {
+            if (_localPlayerRig != null)
+            {
+                return _localPlayerRig;
+            }
+
+            var rigObject = new GameObject("Local Player Rig");
+            _localPlayerRig = rigObject.transform;
+            return _localPlayerRig;
+        }
+
         private void UpdateCameraFollow()
         {
-            if (client.LocalPlayerId == 0 || !client.Players.TryGetValue(client.LocalPlayerId, out var localPlayer))
+            if (client.LocalPlayerId == 0 || !client.TryGetLocalPosition(out var localPosition))
             {
                 return;
             }
@@ -619,43 +1038,92 @@ namespace BasicMultiplayer
 
             UpdateCameraLook();
 
-            var groundY = GetSurfaceCell(localPlayer.Position).y;
-            var focus = new Vector3(localPlayer.Position.x, groundY + 1.35f, localPlayer.Position.y);
-            var forward = _cameraForward.sqrMagnitude > 0.001f ? _cameraForward.normalized : Vector3.forward;
-            var lookTarget = focus + Vector3.up * Mathf.Clamp(-_cameraPitch * 0.075f, -2f, 2f);
+            var rig = UpdateLocalPlayerRig(localPosition);
+            var cameraWasParented = camera.transform.parent == rig;
+
+            if (camera.transform.parent != rig)
+            {
+                camera.transform.SetParent(rig, worldPositionStays: false);
+            }
+
+            var focus = Vector3.up * PlayerCameraFocusHeight;
+            var lookDirection = Quaternion.Euler(_cameraPitch, 0f, 0f) * Vector3.forward;
+            lookDirection = lookDirection.sqrMagnitude > 0.001f ? lookDirection.normalized : Vector3.forward;
             var positionSpeed = 4f;
             var rotationSpeed = 6f;
             var targetFov = 58f;
-            Vector3 desiredPosition;
-            Quaternion desiredRotation;
+            Vector3 desiredLocalPosition;
+            Quaternion desiredLocalRotation;
 
             switch (cameraZoomMode)
             {
                 case CameraZoomMode.Close:
-                    desiredPosition = focus - forward * 3.75f + Vector3.up * 2.35f;
-                    desiredRotation = Quaternion.LookRotation((lookTarget + Vector3.up * 0.25f) - desiredPosition, Vector3.up);
+                    desiredLocalPosition = focus - lookDirection * 3.75f;
+                    desiredLocalRotation = Quaternion.LookRotation(lookDirection, Vector3.up);
                     targetFov = 62f;
                     positionSpeed = 7f;
                     rotationSpeed = 9f;
                     break;
 
                 case CameraZoomMode.FirstPerson:
-                    desiredPosition = new Vector3(localPlayer.Position.x, groundY + 1.65f, localPlayer.Position.y) + forward * 0.18f;
-                    desiredRotation = Quaternion.Euler(_cameraPitch, _cameraYaw, 0f);
+                    desiredLocalPosition = Vector3.up * PlayerCameraHeadHeight + Vector3.forward * 0.18f;
+                    desiredLocalRotation = Quaternion.LookRotation(lookDirection, Vector3.up);
                     targetFov = 68f;
                     positionSpeed = 14f;
                     rotationSpeed = 14f;
                     break;
 
                 default:
-                    desiredPosition = focus - forward * 13f + Vector3.up * 13f;
-                    desiredRotation = Quaternion.LookRotation(lookTarget - desiredPosition, Vector3.up);
+                    desiredLocalPosition = focus - lookDirection * 13f;
+                    desiredLocalRotation = Quaternion.LookRotation(lookDirection, Vector3.up);
                     break;
             }
 
-            camera.transform.position = Vector3.Lerp(camera.transform.position, desiredPosition, positionSpeed * Time.deltaTime);
-            camera.transform.rotation = Quaternion.Slerp(camera.transform.rotation, desiredRotation, rotationSpeed * Time.deltaTime);
+            if (!cameraWasParented || cameraZoomMode == CameraZoomMode.FirstPerson)
+            {
+                camera.transform.localPosition = desiredLocalPosition;
+                camera.transform.localRotation = desiredLocalRotation;
+            }
+            else
+            {
+                camera.transform.localPosition = Vector3.Lerp(camera.transform.localPosition, desiredLocalPosition, positionSpeed * Time.deltaTime);
+                camera.transform.localRotation = Quaternion.Slerp(camera.transform.localRotation, desiredLocalRotation, rotationSpeed * Time.deltaTime);
+            }
+
             camera.fieldOfView = Mathf.Lerp(camera.fieldOfView, targetFov, 8f * Time.deltaTime);
+        }
+
+        private float GetSmoothedLocalGroundY(Vector2 localPlayerPosition)
+        {
+            if (_smoothedLocalGroundFrame == Time.frameCount)
+            {
+                return _smoothedLocalGroundY;
+            }
+
+            var targetGroundY = TryGetPlayerTargetFootY(client.LocalPlayerId, localPlayerPosition, out var footY)
+                ? footY
+                : GetSurfaceCell(GetPlayerWorldPosition(localPlayerPosition)).y;
+
+            if (!_hasSmoothedLocalGroundY)
+            {
+                _smoothedLocalGroundY = targetGroundY;
+                _hasSmoothedLocalGroundY = true;
+                _smoothedLocalGroundFrame = Time.frameCount;
+                return _smoothedLocalGroundY;
+            }
+
+            var speed = targetGroundY > _smoothedLocalGroundY
+                ? playerClimbSpeedBlocksPerSecond
+                : playerFallSpeedBlocksPerSecond;
+            _smoothedLocalGroundY = Mathf.MoveTowards(_smoothedLocalGroundY, targetGroundY, speed * Time.deltaTime);
+
+            if (_hasLocalClimbTarget && _smoothedLocalGroundY >= _localClimbTargetFootY - 0.1f)
+            {
+                _hasLocalClimbTarget = false;
+            }
+
+            _smoothedLocalGroundFrame = Time.frameCount;
+            return _smoothedLocalGroundY;
         }
 
         private void UpdateCameraLook()
