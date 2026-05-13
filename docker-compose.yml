@@ -23,12 +23,46 @@ services:
       dockerfile: Server/BasicUdpGameServer/Dockerfile
     container_name: test-mobile-multiplayer-game-server
     environment:
+      APP_DOMAIN: ${APP_DOMAIN:-dev.augmego.ca}
       GAME_DATABASE_URL: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-mobile_multiplayer};Username=${POSTGRES_USER:-game};Password=${POSTGRES_PASSWORD:-game_dev_password};Include Error Detail=true"
+      GAME_HTTP_PORT: 8080
+      TURN_HOST: ${APP_DOMAIN:-dev.augmego.ca}
+      TURN_REALM: ${TURN_REALM:-${APP_DOMAIN:-dev.augmego.ca}}
+      TURN_STATIC_AUTH_SECRET: ${TURN_STATIC_AUTH_SECRET:-change_me}
     depends_on:
       postgres:
         condition: service_healthy
     expose:
       - "7777/udp"
+      - "8080/tcp"
+    restart: unless-stopped
+
+  coturn:
+    image: coturn/coturn:4.6.2-alpine
+    container_name: test-mobile-multiplayer-coturn
+    environment:
+      TURN_REALM: ${TURN_REALM:-${APP_DOMAIN:-dev.augmego.ca}}
+      TURN_STATIC_AUTH_SECRET: ${TURN_STATIC_AUTH_SECRET:-change_me}
+      TURN_MIN_PORT: ${TURN_MIN_PORT:-49160}
+      TURN_MAX_PORT: ${TURN_MAX_PORT:-49200}
+      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:-}
+    command: >
+      sh -c '
+        if [ -n "${TURN_EXTERNAL_IP:-}" ]; then
+          exec turnserver --no-cli --no-tls --no-dtls --fingerprint --lt-cred-mech
+            --use-auth-secret --static-auth-secret "${TURN_STATIC_AUTH_SECRET:-change_me}"
+            --realm "${TURN_REALM:-dev.augmego.ca}" --external-ip "${TURN_EXTERNAL_IP:-}"
+            --min-port "${TURN_MIN_PORT:-49160}" --max-port "${TURN_MAX_PORT:-49200}";
+        fi;
+        exec turnserver --no-cli --no-tls --no-dtls --fingerprint --lt-cred-mech
+          --use-auth-secret --static-auth-secret "${TURN_STATIC_AUTH_SECRET:-change_me}"
+          --realm "${TURN_REALM:-dev.augmego.ca}"
+          --min-port "${TURN_MIN_PORT:-49160}" --max-port "${TURN_MAX_PORT:-49200}";
+      '
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      - "${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49200}:${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49200}/udp"
     restart: unless-stopped
 
   nginx:
@@ -38,11 +72,13 @@ services:
       APP_DOMAIN: ${APP_DOMAIN:-dev.augmego.ca}
     ports:
       - "80:80"
+      - "443:443"
       - "7777:7777/udp"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/templates:/etc/nginx/templates:ro
       - ./nginx/stream.d:/etc/nginx/stream.d:ro
+      - ./certs:/etc/nginx/certs:ro
     depends_on:
       game-server:
         condition: service_started

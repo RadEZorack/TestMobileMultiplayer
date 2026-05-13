@@ -16,6 +16,8 @@ namespace BasicMultiplayer
             root.AddComponent<UdpGameClient>();
             root.AddComponent<PlayerWorldView>();
             root.AddComponent<VoxelPlayMultiplayerDemo>();
+            root.AddComponent<WebRtcPeerMediaClient>();
+            root.AddComponent<PeerMediaBillboardView>();
 
             EnsureCamera();
             EnsureArena();

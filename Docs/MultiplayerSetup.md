@@ -4,7 +4,8 @@ This project now has a deliberately small client/server multiplayer loop:
 
 - Server: `Server/BasicUdpGameServer`
 - Unity client scripts: `Assets/Scripts/BasicMultiplayer`
-- Default UDP port: `7777`
+- Default UDP gameplay port: `7777`
+- Default WebSocket signaling path: `/rtc`
 
 The server is authoritative for player positions. Clients send only movement intent; the server simulates positions and broadcasts snapshots. Voxel block edits are also relayed through the server so every connected client applies the same place/remove sequence.
 
@@ -18,7 +19,7 @@ For the Docker path that matches a simple droplet deploy, copy `.env.example` to
 docker compose up -d --build
 ```
 
-This starts Postgres, the UDP game server, and nginx. Nginx listens on HTTP `80` and UDP `7777`, then forwards game traffic to the `game-server` container.
+This starts Postgres, the UDP game server, nginx, and coturn. Nginx listens on HTTP `80`, HTTPS `443`, and UDP `7777`; gameplay traffic stays on UDP while WebRTC signaling uses `wss://APP_DOMAIN/rtc`.
 
 For quick local server iteration without rebuilding the container, run only Postgres and start the .NET server directly:
 
@@ -44,9 +45,22 @@ APP_DOMAIN=dev.augmego.ca
 POSTGRES_DB=mobile_multiplayer
 POSTGRES_USER=game
 POSTGRES_PASSWORD=game_dev_password
+TURN_REALM=dev.augmego.ca
+TURN_STATIC_AUTH_SECRET=change_me
+TURN_MIN_PORT=49160
+TURN_MAX_PORT=49200
 ```
 
-Use `APP_DOMAIN=prod.augmego.ca` or another host name for a different environment. Set a real database password before putting the stack on a public droplet. If `.env` is missing, compose defaults to the dev values in `docker-compose.yml`.
+Use `APP_DOMAIN=prod.augmego.ca` or another host name for a different environment. Set real database and TURN secrets before putting the stack on a public droplet. If `.env` is missing, compose defaults to the dev values in `docker-compose.yml`.
+
+For WSS, place your certificate files at:
+
+```text
+certs/fullchain.pem
+certs/privkey.pem
+```
+
+For public WebRTC relay, open TCP/UDP `3478` and UDP `49160-49200` on the host firewall. If the droplet needs an explicit public address for coturn, set `TURN_EXTERNAL_IP`.
 
 ## 2. Test in the Unity Editor
 
@@ -59,19 +73,23 @@ The connection overlay is hidden by default. For manual host/port testing, enabl
 
 Tap the `CAM` button, or press `C` in the editor, to cycle the camera from far chase to close chase to first person. Movement is camera-relative, so turning with the right joystick also changes the direction the left joystick considers forward.
 
+Tap the `AV` button to request camera/microphone permission and share WebRTC media with peers. Remote feeds appear as hovering video panels above player capsules; tapping `AV` again closes local media and peer connections.
+
+If the Unity Editor is set to the iOS build target and throws `EntryPointNotFoundException: RegisterDebugLog` during assembly reload, run `Tools/patch-unity-webrtc-ios-editor.sh`. It patches the cached `com.unity.webrtc` package so `WebRTC.Lib` uses `__Internal` only for `UNITY_IOS && !UNITY_EDITOR`. The iOS player still uses `__Internal`; the Editor needs the package's macOS `libwebrtc.dylib`.
+
 Aim with the center crosshair. Use the on-screen `L` button or left mouse button to remove the highlighted voxel, and the `R` button or right mouse button to place a voxel on the highlighted face. These edits are sent over UDP and replayed on other clients.
 
 To test a second player, run another Unity editor instance, or make a standalone desktop build and connect both to `127.0.0.1`.
 
-## Docker nginx UDP front door
+## Docker nginx front door
 
-The included `docker-compose.yml` exposes nginx on HTTP port `80` and UDP port `7777`. In the Docker stack, nginx forwards UDP traffic to the `game-server` service:
+The included `docker-compose.yml` exposes nginx on HTTP `80`, HTTPS `443`, and UDP `7777`. In the Docker stack, nginx forwards UDP gameplay to the `game-server` service and proxies WebSocket signaling to the same container:
 
 ```sh
 docker compose up -d --build
 ```
 
-Then connect clients to `dev.augmego.ca` on port `7777`.
+Then connect clients to `dev.augmego.ca` on port `7777`; the Unity client derives `wss://dev.augmego.ca/rtc` from the same host for WebRTC signaling.
 
 Make sure `dev.augmego.ca` resolves on the device that is running the game. A Mac `/etc/hosts` entry only affects the Mac; an iPhone needs public DNS, router/local DNS, or a direct IP address in the game overlay.
 
@@ -80,6 +98,8 @@ The client includes a session id in its UDP packets, and the server uses that id
 Voxel edits use sequence numbers. Clients include the last applied edit sequence in their regular packets, and the server resends missed edits when needed. Edits are sent as integer voxel cells and reconstructed at voxel centers on the receiving client. This is still a prototype transport, but it avoids the easiest UDP packet-loss desync.
 
 On server startup, persisted edits are loaded from Postgres and replayed through the same sequence system, so block changes survive a server restart.
+
+WebRTC media does not pass through nginx. Peers connect directly where possible and fall back to coturn using short-lived credentials from the game server.
 
 ## 3. Test on an iPhone over Wi-Fi
 
@@ -94,7 +114,7 @@ ipconfig getifaddr en0
 4. Launch on the phone.
 5. The client auto-connects using the default host in `UdpGameClient`.
 
-Your iPhone and Mac need to be on the same Wi-Fi network, and your firewall must allow UDP port `7777`.
+Your iPhone and Mac need to be on the same Wi-Fi network for local gameplay testing, and your firewall must allow UDP port `7777`. WebRTC camera/mic testing requires a physical iOS device; Unity WebRTC does not support the iOS Simulator.
 
 ## 4. What to build next
 

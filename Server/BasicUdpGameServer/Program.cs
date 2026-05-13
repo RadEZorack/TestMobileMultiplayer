@@ -2,8 +2,16 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using System.Net.WebSockets;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 [assembly: InternalsVisibleTo("BasicUdpGameServer.Tests")]
@@ -11,10 +19,14 @@ using Npgsql;
 const string DefaultWorldId = "default";
 const string DefaultDatabaseConnectionString =
     "Host=localhost;Port=5432;Database=mobile_multiplayer;Username=game;Password=game_dev_password;Include Error Detail=true";
+const int DefaultHttpPort = 8080;
 
 var port = args.Length > 0 && int.TryParse(args[0], out var parsedPort)
     ? parsedPort
     : 7777;
+var httpPort = int.TryParse(Environment.GetEnvironmentVariable("GAME_HTTP_PORT"), out var parsedHttpPort)
+    ? parsedHttpPort
+    : DefaultHttpPort;
 
 using var shutdown = new CancellationTokenSource();
 
@@ -35,8 +47,45 @@ await using var voxelEditStore = new PostgresVoxelEditStore(databaseConnectionSt
 await voxelEditStore.InitializeAsync(shutdown.Token);
 var persistedVoxelEdits = await voxelEditStore.LoadVoxelEditsAsync(shutdown.Token);
 
-using var server = new BasicUdpGameServer(port, voxelEditStore, persistedVoxelEdits);
-await server.RunAsync(shutdown.Token);
+using var signalingHub = new RtcSignalingHub(RtcSignalingOptions.FromEnvironment());
+using var server = new BasicUdpGameServer(port, voxelEditStore, persistedVoxelEdits, signalingHub);
+await using var webApp = CreateWebApplication(httpPort, signalingHub, server);
+
+try
+{
+    await Task.WhenAll(server.RunAsync(shutdown.Token), webApp.RunAsync(shutdown.Token));
+}
+catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
+{
+    // Normal Ctrl+C shutdown path.
+}
+
+static WebApplication CreateWebApplication(int httpPort, RtcSignalingHub signalingHub, BasicUdpGameServer gameServer)
+{
+    var builder = WebApplication.CreateBuilder(Array.Empty<string>());
+    builder.WebHost.ConfigureKestrel(options => options.ListenAnyIP(httpPort));
+    builder.Logging.ClearProviders();
+    builder.Logging.AddConsole();
+
+    var app = builder.Build();
+    app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
+
+    app.MapGet("/health", () => Results.Text("ok\n", "text/plain"));
+    app.Map("/rtc", async context =>
+    {
+        if (!context.WebSockets.IsWebSocketRequest)
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsync("Expected websocket request.", context.RequestAborted);
+            return;
+        }
+
+        await signalingHub.HandleWebSocketAsync(context, gameServer, context.RequestAborted);
+    });
+
+    Console.WriteLine($"WebSocket signaling listening on 0.0.0.0:{httpPort}/rtc");
+    return app;
+}
 
 internal sealed class BasicUdpGameServer : IDisposable
 {
@@ -50,6 +99,7 @@ internal sealed class BasicUdpGameServer : IDisposable
 
     private readonly UdpClient _udp;
     private readonly PostgresVoxelEditStore _voxelEditStore;
+    private readonly RtcSignalingHub _signalingHub;
     private readonly ConcurrentDictionary<string, Player> _playersByClientKey = new();
     private readonly List<VoxelEdit> _voxelEdits = new();
     private readonly object _voxelEditLock = new();
@@ -58,9 +108,14 @@ internal sealed class BasicUdpGameServer : IDisposable
     private long _nextVoxelEditSequence;
     private long _tick;
 
-    public BasicUdpGameServer(int port, PostgresVoxelEditStore voxelEditStore, IReadOnlyCollection<VoxelEdit> persistedVoxelEdits)
+    public BasicUdpGameServer(
+        int port,
+        PostgresVoxelEditStore voxelEditStore,
+        IReadOnlyCollection<VoxelEdit> persistedVoxelEdits,
+        RtcSignalingHub signalingHub)
     {
         _voxelEditStore = voxelEditStore;
+        _signalingHub = signalingHub;
         _voxelEdits.AddRange(persistedVoxelEdits.OrderBy(edit => edit.Sequence));
         _nextVoxelEditSequence = _voxelEdits.Count == 0 ? 0 : _voxelEdits[^1].Sequence;
         _udp = new UdpClient(new IPEndPoint(IPAddress.Any, port));
@@ -332,6 +387,7 @@ internal sealed class BasicUdpGameServer : IDisposable
             if (now - player.LastSeen > ClientTimeout)
             {
                 _playersByClientKey.TryRemove(clientKey, out _);
+                _signalingHub.RemovePlayer(player.Id);
                 Console.WriteLine($"Player {player.Id} timed out.");
                 continue;
             }
@@ -482,6 +538,23 @@ internal sealed class BasicUdpGameServer : IDisposable
         _udp.Send(bytes, bytes.Length, endpoint);
     }
 
+    public bool TryGetPlayerIdForSession(string sessionId, int claimedPlayerId, out int playerId)
+    {
+        playerId = 0;
+        var sessionKey = GetSessionKey(sessionId, fallbackKey: string.Empty);
+
+        if (sessionKey.Length == 0
+            || !_playersByClientKey.TryGetValue(sessionKey, out var player)
+            || claimedPlayerId != player.Id)
+        {
+            return false;
+        }
+
+        playerId = player.Id;
+        player.LastSeen = DateTimeOffset.UtcNow;
+        return true;
+    }
+
     private static string GetEndpointKey(IPEndPoint endpoint)
     {
         return $"endpoint:{endpoint.Address}:{endpoint.Port}";
@@ -622,6 +695,392 @@ internal sealed class BasicUdpGameServer : IDisposable
         public DateTimeOffset LastSeen { get; set; }
     }
 }
+
+internal sealed class RtcSignalingHub : IDisposable
+{
+    private const int ReceiveBufferBytes = 4096;
+    private const int MaxTextMessageBytes = 256 * 1024;
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
+    private readonly RtcSignalingOptions _options;
+    private readonly ConcurrentDictionary<int, RtcClientConnection> _clientsByPlayerId = new();
+    private readonly ConcurrentDictionary<int, bool> _mediaEnabledByPlayerId = new();
+
+    public RtcSignalingHub(RtcSignalingOptions options)
+    {
+        _options = options;
+    }
+
+    public async Task HandleWebSocketAsync(
+        HttpContext context,
+        BasicUdpGameServer gameServer,
+        CancellationToken cancellationToken)
+    {
+        using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+        var helloJson = await ReceiveTextMessageAsync(webSocket, cancellationToken);
+
+        if (helloJson == null
+            || !TryParseHello(helloJson, out var sessionId, out var claimedPlayerId)
+            || !gameServer.TryGetPlayerIdForSession(sessionId, claimedPlayerId, out var playerId))
+        {
+            await CloseSocketAsync(webSocket, "Invalid RTC hello.", cancellationToken);
+            return;
+        }
+
+        var connection = new RtcClientConnection(playerId, webSocket);
+        var previousConnection = _clientsByPlayerId.AddOrUpdate(
+            playerId,
+            connection,
+            (playerKey, existing) =>
+            {
+                _ = existing.CloseAsync("Replaced by a newer RTC connection.");
+                return connection;
+            });
+
+        if (!ReferenceEquals(previousConnection, connection))
+        {
+            _ = previousConnection.CloseAsync("Replaced by a newer RTC connection.");
+        }
+
+        Console.WriteLine($"RTC signaling connected for player {playerId}.");
+
+        try
+        {
+            await SendJsonAsync(connection, new
+            {
+                type = "config",
+                playerId,
+                iceServers = _options.CreateIceServers(DateTimeOffset.UtcNow)
+            }, cancellationToken);
+            await SendMediaStateAsync(connection, cancellationToken);
+            await BroadcastMediaStateAsync(cancellationToken);
+
+            while (webSocket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
+            {
+                var message = await ReceiveTextMessageAsync(webSocket, cancellationToken);
+
+                if (message == null)
+                {
+                    break;
+                }
+
+                await ProcessClientMessageAsync(connection, message, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (WebSocketException exception)
+        {
+            Console.WriteLine($"RTC signaling websocket failed for player {playerId}: {exception.Message}");
+        }
+        finally
+        {
+            if (_clientsByPlayerId.TryGetValue(playerId, out var current)
+                && ReferenceEquals(current, connection))
+            {
+                _clientsByPlayerId.TryRemove(playerId, out _);
+                _mediaEnabledByPlayerId.TryRemove(playerId, out _);
+                await BroadcastMediaStateAsync(CancellationToken.None);
+            }
+
+            Console.WriteLine($"RTC signaling disconnected for player {playerId}.");
+        }
+    }
+
+    public void RemovePlayer(int playerId)
+    {
+        _mediaEnabledByPlayerId.TryRemove(playerId, out _);
+
+        if (_clientsByPlayerId.TryRemove(playerId, out var connection))
+        {
+            _ = connection.CloseAsync("Player timed out.");
+        }
+
+        _ = BroadcastMediaStateAsync(CancellationToken.None);
+    }
+
+    public void Dispose()
+    {
+        foreach (var connection in _clientsByPlayerId.Values)
+        {
+            _ = connection.CloseAsync("Server shutting down.");
+        }
+    }
+
+    private async Task ProcessClientMessageAsync(
+        RtcClientConnection connection,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        using var document = JsonDocument.Parse(message);
+        var root = document.RootElement;
+        var type = GetString(root, "type");
+
+        switch (type)
+        {
+            case "media":
+                var enabled = root.TryGetProperty("enabled", out var enabledElement)
+                    && enabledElement.ValueKind == JsonValueKind.True;
+
+                if (enabled)
+                {
+                    _mediaEnabledByPlayerId[connection.PlayerId] = true;
+                }
+                else
+                {
+                    _mediaEnabledByPlayerId.TryRemove(connection.PlayerId, out _);
+                }
+
+                await BroadcastMediaStateAsync(cancellationToken);
+                break;
+
+            case "signal":
+                if (!root.TryGetProperty("to", out var toElement)
+                    || !toElement.TryGetInt32(out var targetPlayerId)
+                    || !root.TryGetProperty("payload", out var payload)
+                    || !_clientsByPlayerId.TryGetValue(targetPlayerId, out var targetConnection))
+                {
+                    return;
+                }
+
+                await SendJsonAsync(targetConnection, new
+                {
+                    type = "signal",
+                    from = connection.PlayerId,
+                    payload
+                }, cancellationToken);
+                break;
+        }
+    }
+
+    private async Task BroadcastMediaStateAsync(CancellationToken cancellationToken)
+    {
+        var clients = _clientsByPlayerId.Values.ToArray();
+
+        foreach (var client in clients)
+        {
+            await SendMediaStateAsync(client, cancellationToken);
+        }
+    }
+
+    private Task SendMediaStateAsync(RtcClientConnection connection, CancellationToken cancellationToken)
+    {
+        var players = _clientsByPlayerId.Keys
+            .OrderBy(playerId => playerId)
+            .Select(playerId => new
+            {
+                playerId,
+                enabled = _mediaEnabledByPlayerId.ContainsKey(playerId)
+            })
+            .ToArray();
+
+        return SendJsonAsync(connection, new
+        {
+            type = "media-state",
+            players
+        }, cancellationToken);
+    }
+
+    private static async Task SendJsonAsync(
+        RtcClientConnection connection,
+        object payload,
+        CancellationToken cancellationToken)
+    {
+        var json = JsonSerializer.Serialize(payload, JsonOptions);
+        var bytes = Encoding.UTF8.GetBytes(json);
+
+        await connection.SendLock.WaitAsync(cancellationToken);
+
+        try
+        {
+            if (connection.Socket.State == WebSocketState.Open)
+            {
+                await connection.Socket.SendAsync(
+                    bytes,
+                    WebSocketMessageType.Text,
+                    endOfMessage: true,
+                    cancellationToken);
+            }
+        }
+        finally
+        {
+            connection.SendLock.Release();
+        }
+    }
+
+    private static async Task<string?> ReceiveTextMessageAsync(WebSocket webSocket, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[ReceiveBufferBytes];
+        using var memory = new MemoryStream();
+
+        while (true)
+        {
+            var result = await webSocket.ReceiveAsync(buffer, cancellationToken);
+
+            if (result.MessageType == WebSocketMessageType.Close)
+            {
+                return null;
+            }
+
+            if (result.MessageType != WebSocketMessageType.Text)
+            {
+                throw new InvalidOperationException("RTC signaling only accepts text websocket messages.");
+            }
+
+            memory.Write(buffer, 0, result.Count);
+
+            if (memory.Length > MaxTextMessageBytes)
+            {
+                throw new InvalidOperationException("RTC signaling message was too large.");
+            }
+
+            if (result.EndOfMessage)
+            {
+                return Encoding.UTF8.GetString(memory.ToArray());
+            }
+        }
+    }
+
+    private static bool TryParseHello(string message, out string sessionId, out int playerId)
+    {
+        sessionId = string.Empty;
+        playerId = 0;
+
+        using var document = JsonDocument.Parse(message);
+        var root = document.RootElement;
+
+        if (GetString(root, "type") != "hello"
+            || !root.TryGetProperty("sessionId", out var sessionElement)
+            || sessionElement.ValueKind != JsonValueKind.String
+            || !root.TryGetProperty("playerId", out var playerElement)
+            || !playerElement.TryGetInt32(out playerId))
+        {
+            return false;
+        }
+
+        sessionId = sessionElement.GetString() ?? string.Empty;
+        return sessionId.Length > 0 && playerId > 0;
+    }
+
+    private static string GetString(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var property)
+            && property.ValueKind == JsonValueKind.String
+            ? property.GetString() ?? string.Empty
+            : string.Empty;
+    }
+
+    private static Task CloseSocketAsync(WebSocket socket, string reason, CancellationToken cancellationToken)
+    {
+        return socket.State == WebSocketState.Open
+            ? socket.CloseAsync(WebSocketCloseStatus.PolicyViolation, reason, cancellationToken)
+            : Task.CompletedTask;
+    }
+
+    private sealed class RtcClientConnection
+    {
+        public RtcClientConnection(int playerId, WebSocket socket)
+        {
+            PlayerId = playerId;
+            Socket = socket;
+        }
+
+        public int PlayerId { get; }
+        public WebSocket Socket { get; }
+        public SemaphoreSlim SendLock { get; } = new(1, 1);
+
+        public async Task CloseAsync(string reason)
+        {
+            try
+            {
+                if (Socket.State == WebSocketState.Open)
+                {
+                    await Socket.CloseAsync(WebSocketCloseStatus.NormalClosure, reason, CancellationToken.None);
+                }
+            }
+            catch (WebSocketException)
+            {
+            }
+        }
+    }
+}
+
+internal sealed class RtcSignalingOptions
+{
+    private const int DefaultTurnPort = 3478;
+    private static readonly TimeSpan DefaultCredentialLifetime = TimeSpan.FromHours(4);
+
+    public RtcSignalingOptions(string turnHost, string turnRealm, string turnStaticAuthSecret)
+    {
+        TurnHost = turnHost;
+        TurnRealm = turnRealm;
+        TurnStaticAuthSecret = turnStaticAuthSecret;
+    }
+
+    public string TurnHost { get; }
+    public string TurnRealm { get; }
+    public string TurnStaticAuthSecret { get; }
+
+    public static RtcSignalingOptions FromEnvironment()
+    {
+        var appDomain = Environment.GetEnvironmentVariable("APP_DOMAIN");
+        var realm = FirstNonEmpty(
+            Environment.GetEnvironmentVariable("TURN_REALM"),
+            appDomain,
+            "localhost");
+        var host = FirstNonEmpty(
+            Environment.GetEnvironmentVariable("TURN_HOST"),
+            realm);
+        var secret = FirstNonEmpty(
+            Environment.GetEnvironmentVariable("TURN_STATIC_AUTH_SECRET"),
+            "change_me");
+
+        return new RtcSignalingOptions(host, realm, secret);
+    }
+
+    public RtcIceServerDto[] CreateIceServers(DateTimeOffset now)
+    {
+        var expiresAt = now.Add(DefaultCredentialLifetime).ToUnixTimeSeconds();
+        var username = expiresAt.ToString(CultureInfo.InvariantCulture);
+
+        return
+        [
+            new RtcIceServerDto(
+                [
+                    $"stun:{TurnHost}:{DefaultTurnPort}",
+                    $"turn:{TurnHost}:{DefaultTurnPort}?transport=udp",
+                    $"turn:{TurnHost}:{DefaultTurnPort}?transport=tcp"
+                ],
+                username,
+                CreateTurnCredential(username, TurnStaticAuthSecret))
+        ];
+    }
+
+    internal static string CreateTurnCredential(string username, string staticAuthSecret)
+    {
+        using var hmac = new HMACSHA1(Encoding.UTF8.GetBytes(staticAuthSecret));
+        return Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(username)));
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return string.Empty;
+    }
+}
+
+internal sealed record RtcIceServerDto(string[] Urls, string Username, string Credential);
 
 internal sealed class PostgresVoxelEditStore : IAsyncDisposable
 {

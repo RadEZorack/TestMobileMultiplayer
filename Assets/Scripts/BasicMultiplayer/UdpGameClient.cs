@@ -65,6 +65,9 @@ namespace BasicMultiplayer
 
         public IReadOnlyDictionary<int, PlayerSnapshot> Players => _players;
         public int LocalPlayerId => _localPlayerId;
+        public string SessionId => _clientSessionId;
+        public string ServerHost => NormalizeServerHost(serverHost);
+        public int ServerPort => serverPort;
         public bool IsConnected => _udp != null;
         public bool HasLocalPosition => _hasLocalPosition;
         public Vector2 LocalPosition => _localPosition;

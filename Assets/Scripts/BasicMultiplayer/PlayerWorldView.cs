@@ -32,6 +32,11 @@ namespace BasicMultiplayer
             _remoteMaterial = BasicMultiplayerMaterials.Create(new Color(1f, 0.64f, 0.15f));
         }
 
+        public bool TryGetAvatarTransform(int playerId, out Transform avatar)
+        {
+            return _avatars.TryGetValue(playerId, out avatar);
+        }
+
         private void Update()
         {
             if (client == null)
