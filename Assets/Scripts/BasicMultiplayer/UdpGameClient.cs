@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
@@ -34,6 +35,8 @@ namespace BasicMultiplayer
         [SerializeField] private bool autoConnectOnStart = true;
         [SerializeField] private bool showConnectionOverlay = false;
         [SerializeField] private bool showVirtualJoysticks = true;
+        [SerializeField] private GameAuthClient authClient;
+        [SerializeField] private bool waitForAuthBeforeConnect = true;
 
         private readonly ConcurrentQueue<string> _incomingMessages = new();
         private readonly Dictionary<int, PlayerSnapshot> _players = new();
@@ -65,7 +68,7 @@ namespace BasicMultiplayer
 
         public IReadOnlyDictionary<int, PlayerSnapshot> Players => _players;
         public int LocalPlayerId => _localPlayerId;
-        public string SessionId => _clientSessionId;
+        public string SessionId => authClient != null && authClient.HasGameSession ? authClient.GameSessionId : _clientSessionId;
         public string ServerHost => NormalizeServerHost(serverHost);
         public int ServerPort => serverPort;
         public bool IsConnected => _udp != null;
@@ -81,9 +84,21 @@ namespace BasicMultiplayer
         {
             Application.runInBackground = true;
 
+            if (authClient == null)
+            {
+                authClient = GetComponent<GameAuthClient>();
+            }
+
             if (autoConnectOnStart || !showConnectionOverlay)
             {
-                Connect();
+                if (waitForAuthBeforeConnect && authClient != null)
+                {
+                    StartCoroutine(ConnectWhenAuthReadyCoroutine());
+                }
+                else
+                {
+                    Connect();
+                }
             }
         }
 
@@ -129,6 +144,14 @@ namespace BasicMultiplayer
 
         public void Connect()
         {
+            if (waitForAuthBeforeConnect
+                && authClient != null
+                && !authClient.HasGameSession)
+            {
+                _status = $"Waiting for auth: {authClient.Status}";
+                return;
+            }
+
             Disconnect();
 
             try
@@ -185,6 +208,17 @@ namespace BasicMultiplayer
             _localPosition = Vector2.zero;
             _players.Clear();
             _status = "Disconnected";
+        }
+
+        private IEnumerator ConnectWhenAuthReadyCoroutine()
+        {
+            while (authClient != null && !authClient.HasGameSession)
+            {
+                _status = $"Waiting for auth: {authClient.Status}";
+                yield return null;
+            }
+
+            Connect();
         }
 
         public bool TryGetLocalPosition(out Vector2 position)
@@ -364,7 +398,7 @@ namespace BasicMultiplayer
                 Send(string.Format(
                     CultureInfo.InvariantCulture,
                     "INPUT2 {0} {1} {2:0.###} {3:0.###} {4} {5:0.###} {6:0.###}",
-                    _clientSessionId,
+                    SessionId,
                     _inputSequence++,
                     input.x,
                     input.y,
@@ -377,7 +411,7 @@ namespace BasicMultiplayer
             Send(string.Format(
                 CultureInfo.InvariantCulture,
                 "INPUT2 {0} {1} {2:0.###} {3:0.###} {4}",
-                _clientSessionId,
+                SessionId,
                 _inputSequence++,
                 input.x,
                 input.y,
@@ -386,7 +420,7 @@ namespace BasicMultiplayer
 
         private void SendHello()
         {
-            Send($"HELLO2 {_clientSessionId} {SanitizeToken(playerName, fallback: "Player")} {_lastAppliedVoxelEditSequence}");
+            Send($"HELLO2 {SessionId} {SanitizeToken(playerName, fallback: "Player")} {_lastAppliedVoxelEditSequence}");
         }
 
         public void SendVoxelEdit(VoxelEditAction action, Vector3Int cell, string voxelType)
@@ -396,7 +430,7 @@ namespace BasicMultiplayer
             Send(string.Format(
                 CultureInfo.InvariantCulture,
                 "EDIT2 {0} {1} {2} {3} {4} {5} {6} {7}",
-                _clientSessionId,
+                SessionId,
                 _voxelEditSequence++,
                 actionToken,
                 cell.x,

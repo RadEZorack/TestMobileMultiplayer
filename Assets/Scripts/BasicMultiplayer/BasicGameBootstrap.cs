@@ -7,12 +7,20 @@ namespace BasicMultiplayer
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void CreatePrototypeObjects()
         {
-            if (Object.FindAnyObjectByType<UdpGameClient>() != null)
+            var existingClient = Object.FindAnyObjectByType<UdpGameClient>();
+
+            if (existingClient != null)
             {
+                if (existingClient.GetComponent<GameAuthClient>() == null)
+                {
+                    existingClient.gameObject.AddComponent<GameAuthClient>();
+                }
+
                 return;
             }
 
             var root = new GameObject("Basic UDP Multiplayer");
+            root.AddComponent<GameAuthClient>();
             root.AddComponent<UdpGameClient>();
             root.AddComponent<PlayerWorldView>();
             root.AddComponent<VoxelPlayMultiplayerDemo>();

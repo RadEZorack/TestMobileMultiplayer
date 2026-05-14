@@ -47,9 +47,12 @@ await using var voxelEditStore = new PostgresVoxelEditStore(databaseConnectionSt
 await voxelEditStore.InitializeAsync(shutdown.Token);
 var persistedVoxelEdits = await voxelEditStore.LoadVoxelEditsAsync(shutdown.Token);
 
+await using var accountStore = new PostgresAccountStore(databaseConnectionString);
+await accountStore.InitializeAsync(shutdown.Token);
+using var authService = new GameAuthService(accountStore, AppleAuthOptions.FromEnvironment());
 using var signalingHub = new RtcSignalingHub(RtcSignalingOptions.FromEnvironment());
-using var server = new BasicUdpGameServer(port, voxelEditStore, persistedVoxelEdits, signalingHub);
-await using var webApp = CreateWebApplication(httpPort, signalingHub, server);
+using var server = new BasicUdpGameServer(port, voxelEditStore, persistedVoxelEdits, signalingHub, authService);
+await using var webApp = CreateWebApplication(httpPort, signalingHub, server, authService);
 
 try
 {
@@ -60,7 +63,11 @@ catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
     // Normal Ctrl+C shutdown path.
 }
 
-static WebApplication CreateWebApplication(int httpPort, RtcSignalingHub signalingHub, BasicUdpGameServer gameServer)
+static WebApplication CreateWebApplication(
+    int httpPort,
+    RtcSignalingHub signalingHub,
+    BasicUdpGameServer gameServer,
+    GameAuthService authService)
 {
     var builder = WebApplication.CreateBuilder(Array.Empty<string>());
     builder.WebHost.ConfigureKestrel(options => options.ListenAnyIP(httpPort));
@@ -71,6 +78,66 @@ static WebApplication CreateWebApplication(int httpPort, RtcSignalingHub signali
     app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
 
     app.MapGet("/health", () => Results.Text("ok\n", "text/plain"));
+    app.MapPost("/auth/guest", async (HttpContext context) =>
+    {
+        var request = await ReadJsonBodyAsync<GuestAuthRequest>(context, context.RequestAborted);
+
+        if (request == null || string.IsNullOrWhiteSpace(request.installId))
+        {
+            return Results.BadRequest(new AuthErrorResponse("invalid_request", "installId is required."));
+        }
+
+        var response = await authService.SignInGuestAsync(request, context.RequestAborted);
+        return Results.Json(response, JsonDefaults.Options);
+    });
+    app.MapPost("/auth/refresh", async (HttpContext context) =>
+    {
+        var request = await ReadJsonBodyAsync<RefreshAuthRequest>(context, context.RequestAborted);
+
+        if (request == null || string.IsNullOrWhiteSpace(request.refreshToken))
+        {
+            return Results.BadRequest(new AuthErrorResponse("invalid_request", "refreshToken is required."));
+        }
+
+        var response = await authService.RefreshAsync(request, context.RequestAborted);
+        return response == null
+            ? Results.Unauthorized()
+            : Results.Json(response, JsonDefaults.Options);
+    });
+    app.MapPost("/auth/apple", async (HttpContext context) =>
+    {
+        var request = await ReadJsonBodyAsync<AppleAuthRequest>(context, context.RequestAborted);
+
+        if (request == null || string.IsNullOrWhiteSpace(request.idToken))
+        {
+            return Results.BadRequest(new AuthErrorResponse("invalid_request", "idToken is required."));
+        }
+
+        var currentAccountId = await authService.TryGetAccountIdFromAuthorizationHeaderAsync(
+            context.Request.Headers.Authorization.ToString(),
+            context.RequestAborted);
+        var result = await authService.SignInWithAppleAsync(request, currentAccountId, context.RequestAborted);
+
+        return result.IsSuccess
+            ? Results.Json(result.Response, JsonDefaults.Options)
+            : Results.BadRequest(new AuthErrorResponse(result.ErrorCode, result.ErrorMessage));
+    });
+    app.MapGet("/auth/me", async (HttpContext context) =>
+    {
+        var accountId = await authService.TryGetAccountIdFromAuthorizationHeaderAsync(
+            context.Request.Headers.Authorization.ToString(),
+            context.RequestAborted);
+
+        if (accountId == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var account = await authService.GetAccountAsync(accountId.Value, context.RequestAborted);
+        return account == null
+            ? Results.Unauthorized()
+            : Results.Json(account, JsonDefaults.Options);
+    });
     app.Map("/rtc", async context =>
     {
         if (!context.WebSockets.IsWebSocketRequest)
@@ -87,6 +154,22 @@ static WebApplication CreateWebApplication(int httpPort, RtcSignalingHub signali
     return app;
 }
 
+static async Task<T?> ReadJsonBodyAsync<T>(HttpContext context, CancellationToken cancellationToken)
+{
+    try
+    {
+        return await JsonSerializer.DeserializeAsync<T>(
+            context.Request.Body,
+            JsonDefaults.Options,
+            cancellationToken);
+    }
+    catch (JsonException)
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        return default;
+    }
+}
+
 internal sealed class BasicUdpGameServer : IDisposable
 {
     private const float TickRate = 30f;
@@ -100,6 +183,7 @@ internal sealed class BasicUdpGameServer : IDisposable
     private readonly UdpClient _udp;
     private readonly PostgresVoxelEditStore _voxelEditStore;
     private readonly RtcSignalingHub _signalingHub;
+    private readonly GameAuthService _authService;
     private readonly ConcurrentDictionary<string, Player> _playersByClientKey = new();
     private readonly List<VoxelEdit> _voxelEdits = new();
     private readonly object _voxelEditLock = new();
@@ -112,10 +196,12 @@ internal sealed class BasicUdpGameServer : IDisposable
         int port,
         PostgresVoxelEditStore voxelEditStore,
         IReadOnlyCollection<VoxelEdit> persistedVoxelEdits,
-        RtcSignalingHub signalingHub)
+        RtcSignalingHub signalingHub,
+        GameAuthService authService)
     {
         _voxelEditStore = voxelEditStore;
         _signalingHub = signalingHub;
+        _authService = authService;
         _voxelEdits.AddRange(persistedVoxelEdits.OrderBy(edit => edit.Sequence));
         _nextVoxelEditSequence = _voxelEdits.Count == 0 ? 0 : _voxelEdits[^1].Sequence;
         _udp = new UdpClient(new IPEndPoint(IPAddress.Any, port));
@@ -217,6 +303,12 @@ internal sealed class BasicUdpGameServer : IDisposable
                     return;
                 }
 
+                if (!_authService.IsGameSessionActive(parts[1]))
+                {
+                    Send(endpoint, "ERROR AUTH_REQUIRED");
+                    return;
+                }
+
                 var helloClientKey = GetSessionKey(parts[1], endpointKey);
                 var requestedProtocolName = parts.Length > 2 ? parts[2] : "Player";
                 var helloPlayer = RegisterOrRefreshPlayer(helloClientKey, endpoint, requestedProtocolName, sendWelcome: true);
@@ -233,6 +325,12 @@ internal sealed class BasicUdpGameServer : IDisposable
                     return;
                 }
 
+                if (!_authService.IsGameSessionActive(parts[1]))
+                {
+                    Send(endpoint, "ERROR AUTH_REQUIRED");
+                    return;
+                }
+
                 var inputClientKey = GetSessionKey(parts[1], endpointKey);
                 var inputPlayer = HandleInput(inputClientKey, endpoint, parts, xIndex: 3, yIndex: 4, positionXIndex: 6, positionYIndex: 7);
                 SendPendingVoxelEdits(inputPlayer, ParseAcknowledgedVoxelEditSequence(parts, 5));
@@ -241,6 +339,12 @@ internal sealed class BasicUdpGameServer : IDisposable
             case "EDIT2":
                 if (parts.Length < 8)
                 {
+                    return;
+                }
+
+                if (!_authService.IsGameSessionActive(parts[1]))
+                {
+                    Send(endpoint, "ERROR AUTH_REQUIRED");
                     return;
                 }
 
@@ -1106,6 +1210,805 @@ internal sealed class RtcSignalingOptions
 }
 
 internal sealed record RtcIceServerDto(string[] Urls, string Username, string Credential);
+
+internal static class JsonDefaults
+{
+    public static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+}
+
+internal sealed class GameAuthService : IDisposable
+{
+    private static readonly TimeSpan RefreshTokenLifetime = TimeSpan.FromDays(90);
+    private static readonly TimeSpan AccessTokenLifetime = TimeSpan.FromHours(6);
+    private readonly PostgresAccountStore _store;
+    private readonly AppleTokenVerifier _appleTokenVerifier;
+    private readonly ConcurrentDictionary<string, AuthSession> _activeGameSessionsById = new();
+    private readonly ConcurrentDictionary<string, AuthSession> _activeAccessTokens = new();
+
+    public GameAuthService(PostgresAccountStore store, AppleAuthOptions appleAuthOptions)
+    {
+        _store = store;
+        _appleTokenVerifier = new AppleTokenVerifier(appleAuthOptions);
+    }
+
+    public async Task<AuthResponse> SignInGuestAsync(GuestAuthRequest request, CancellationToken cancellationToken)
+    {
+        var installId = SanitizeSubject(request.installId);
+        var displayName = SanitizeDisplayName(request.displayName, "Guest");
+        var accountId = await _store.GetIdentityAccountAsync("guest", installId, cancellationToken);
+
+        if (accountId == null)
+        {
+            accountId = await _store.CreateAccountAsync(displayName, isGuest: true, cancellationToken);
+        }
+
+        await _store.UpsertIdentityAsync(
+            accountId.Value,
+            "guest",
+            installId,
+            email: null,
+            emailVerified: false,
+            displayName,
+            cancellationToken);
+        return await IssueTokensAsync(accountId.Value, request.platform, cancellationToken);
+    }
+
+    public async Task<AuthResponse?> RefreshAsync(RefreshAuthRequest request, CancellationToken cancellationToken)
+    {
+        var accountId = await _store.ConsumeRefreshTokenAsync(HashToken(request.refreshToken), cancellationToken);
+        return accountId == null
+            ? null
+            : await IssueTokensAsync(accountId.Value, request.platform, cancellationToken);
+    }
+
+    public async Task<AuthResult> SignInWithAppleAsync(
+        AppleAuthRequest request,
+        Guid? currentAccountId,
+        CancellationToken cancellationToken)
+    {
+        AppleIdentity appleIdentity;
+
+        try
+        {
+            appleIdentity = await _appleTokenVerifier.VerifyAsync(request.idToken, cancellationToken);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return AuthResult.Failed("apple_not_configured", exception.Message);
+        }
+        catch (Exception exception) when (exception is JsonException || exception is CryptographicException || exception is FormatException)
+        {
+            return AuthResult.Failed("invalid_apple_token", "Apple identity token could not be verified.");
+        }
+
+        var existingAccountId = await _store.GetIdentityAccountAsync("apple", appleIdentity.Subject, cancellationToken);
+        var accountId = existingAccountId
+            ?? currentAccountId
+            ?? await _store.CreateAccountAsync(
+                SanitizeDisplayName(request.displayName, "Player"),
+                isGuest: false,
+                cancellationToken);
+
+        var appleDisplayName = SanitizeDisplayName(request.displayName, null);
+        await _store.MarkAccountSavedAsync(accountId, appleDisplayName, cancellationToken);
+        await _store.UpsertIdentityAsync(
+            accountId,
+            "apple",
+            appleIdentity.Subject,
+            appleIdentity.Email,
+            appleIdentity.EmailVerified,
+            appleDisplayName,
+            cancellationToken);
+
+        return AuthResult.Succeeded(await IssueTokensAsync(accountId, request.platform, cancellationToken));
+    }
+
+    public bool IsGameSessionActive(string gameSessionId)
+    {
+        if (string.IsNullOrWhiteSpace(gameSessionId))
+        {
+            return false;
+        }
+
+        if (!_activeGameSessionsById.TryGetValue(gameSessionId, out var session))
+        {
+            return false;
+        }
+
+        if (session.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            _activeGameSessionsById.TryRemove(gameSessionId, out _);
+            return false;
+        }
+
+        return true;
+    }
+
+    public Task<Guid?> TryGetAccountIdFromAuthorizationHeaderAsync(string authorizationHeader, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(authorizationHeader)
+            || !authorizationHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult<Guid?>(null);
+        }
+
+        var token = authorizationHeader["Bearer ".Length..].Trim();
+
+        if (!_activeAccessTokens.TryGetValue(token, out var session) || session.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            _activeAccessTokens.TryRemove(token, out _);
+            return Task.FromResult<Guid?>(null);
+        }
+
+        return Task.FromResult<Guid?>(session.AccountId);
+    }
+
+    public Task<AuthAccountResponse?> GetAccountAsync(Guid accountId, CancellationToken cancellationToken)
+    {
+        return _store.GetAccountAsync(accountId, cancellationToken);
+    }
+
+    public void Dispose()
+    {
+        _appleTokenVerifier.Dispose();
+    }
+
+    private async Task<AuthResponse> IssueTokensAsync(Guid accountId, string? platform, CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var account = await _store.GetAccountAsync(accountId, cancellationToken)
+            ?? throw new InvalidOperationException($"Account {accountId} was not found.");
+        var accessToken = GenerateToken();
+        var refreshToken = GenerateToken();
+        var gameSessionId = GenerateToken();
+        var accessExpiresAt = now.Add(AccessTokenLifetime);
+
+        await _store.CreateRefreshTokenAsync(
+            accountId,
+            HashToken(refreshToken),
+            SanitizeSubject(platform ?? "unknown"),
+            now.Add(RefreshTokenLifetime),
+            cancellationToken);
+        await _store.CreateGameSessionAsync(
+            accountId,
+            gameSessionId,
+            HashToken(accessToken),
+            accessExpiresAt,
+            cancellationToken);
+
+        var session = new AuthSession(accountId, accessExpiresAt);
+        _activeAccessTokens[accessToken] = session;
+        _activeGameSessionsById[gameSessionId] = session;
+
+        return new AuthResponse
+        {
+            accountId = account.Id.ToString("N"),
+            displayName = account.DisplayName,
+            isGuest = account.IsGuest,
+            accessToken = accessToken,
+            refreshToken = refreshToken,
+            gameSessionId = gameSessionId,
+            expiresInSeconds = (int)AccessTokenLifetime.TotalSeconds
+        };
+    }
+
+    private static string GenerateToken()
+    {
+        Span<byte> bytes = stackalloc byte[32];
+        RandomNumberGenerator.Fill(bytes);
+        return TokenEncoding.Base64UrlEncode(bytes);
+    }
+
+    private static byte[] HashToken(string token)
+    {
+        return SHA256.HashData(Encoding.UTF8.GetBytes(token));
+    }
+
+    private static string SanitizeSubject(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return GenerateToken();
+        }
+
+        var builder = new StringBuilder(128);
+
+        foreach (var character in value.Trim())
+        {
+            if (char.IsLetterOrDigit(character) || character is '-' or '_' or '.' or ':')
+            {
+                builder.Append(character);
+            }
+
+            if (builder.Length >= 128)
+            {
+                break;
+            }
+        }
+
+        return builder.Length == 0 ? GenerateToken() : builder.ToString();
+    }
+
+    private static string? SanitizeDisplayName(string? value, string? fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed.Length > 32 ? trimmed[..32] : trimmed;
+    }
+}
+
+internal sealed record AuthSession(Guid AccountId, DateTimeOffset ExpiresAt);
+
+internal sealed class PostgresAccountStore : IAsyncDisposable
+{
+    private readonly NpgsqlDataSource _dataSource;
+
+    public PostgresAccountStore(string connectionString)
+    {
+        _dataSource = NpgsqlDataSource.Create(connectionString);
+    }
+
+    public async Task InitializeAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            CREATE TABLE IF NOT EXISTS accounts (
+                id uuid PRIMARY KEY,
+                display_name text NOT NULL,
+                is_guest boolean NOT NULL DEFAULT true,
+                merged_into_account_id uuid NULL REFERENCES accounts(id),
+                created_at timestamptz NOT NULL DEFAULT now(),
+                updated_at timestamptz NOT NULL DEFAULT now(),
+                last_seen_at timestamptz NOT NULL DEFAULT now()
+            );
+
+            CREATE TABLE IF NOT EXISTS account_identities (
+                provider text NOT NULL,
+                provider_subject text NOT NULL,
+                account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                email text NULL,
+                email_verified boolean NOT NULL DEFAULT false,
+                display_name text NULL,
+                linked_at timestamptz NOT NULL DEFAULT now(),
+                last_login_at timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY (provider, provider_subject)
+            );
+
+            CREATE INDEX IF NOT EXISTS account_identities_account_id_idx
+                ON account_identities (account_id);
+
+            CREATE TABLE IF NOT EXISTS refresh_tokens (
+                id uuid PRIMARY KEY,
+                account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                token_hash bytea NOT NULL UNIQUE,
+                platform text NOT NULL,
+                expires_at timestamptz NOT NULL,
+                revoked_at timestamptz NULL,
+                created_at timestamptz NOT NULL DEFAULT now()
+            );
+
+            CREATE TABLE IF NOT EXISTS game_sessions (
+                id text PRIMARY KEY,
+                account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                access_token_hash bytea NOT NULL UNIQUE,
+                expires_at timestamptz NOT NULL,
+                created_at timestamptz NOT NULL DEFAULT now(),
+                last_seen_at timestamptz NOT NULL DEFAULT now()
+            );
+            """,
+            connection);
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        Console.WriteLine("Postgres account auth ready.");
+    }
+
+    public async Task<Guid?> GetIdentityAccountAsync(string provider, string providerSubject, CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            UPDATE account_identities
+            SET last_login_at = now()
+            WHERE provider = @provider AND provider_subject = @provider_subject
+            RETURNING account_id;
+            """,
+            connection);
+        command.Parameters.AddWithValue("provider", provider);
+        command.Parameters.AddWithValue("provider_subject", providerSubject);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is Guid accountId ? accountId : null;
+    }
+
+    public async Task<Guid> CreateAccountAsync(string? displayName, bool isGuest, CancellationToken cancellationToken)
+    {
+        var accountId = Guid.NewGuid();
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            INSERT INTO accounts (id, display_name, is_guest)
+            VALUES (@id, @display_name, @is_guest);
+            """,
+            connection);
+        command.Parameters.AddWithValue("id", accountId);
+        command.Parameters.AddWithValue("display_name", string.IsNullOrWhiteSpace(displayName) ? "Player" : displayName);
+        command.Parameters.AddWithValue("is_guest", isGuest);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return accountId;
+    }
+
+    public async Task MarkAccountSavedAsync(Guid accountId, string? displayName, CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            UPDATE accounts
+            SET is_guest = false,
+                display_name = CASE
+                    WHEN @display_name IS NOT NULL
+                        AND (is_guest OR display_name = 'Guest' OR display_name = 'Player')
+                    THEN @display_name
+                    ELSE display_name
+                END,
+                updated_at = now()
+            WHERE id = @account_id;
+            """,
+            connection);
+        command.Parameters.AddWithValue("account_id", accountId);
+        command.Parameters.AddWithValue("display_name", (object?)displayName ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task UpsertIdentityAsync(
+        Guid accountId,
+        string provider,
+        string providerSubject,
+        string? email,
+        bool emailVerified,
+        string? displayName,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            INSERT INTO account_identities
+                (provider, provider_subject, account_id, email, email_verified, display_name)
+            VALUES
+                (@provider, @provider_subject, @account_id, @email, @email_verified, @display_name)
+            ON CONFLICT (provider, provider_subject) DO UPDATE
+            SET last_login_at = now(),
+                email = COALESCE(EXCLUDED.email, account_identities.email),
+                email_verified = EXCLUDED.email_verified OR account_identities.email_verified,
+                display_name = COALESCE(EXCLUDED.display_name, account_identities.display_name);
+            """,
+            connection);
+        command.Parameters.AddWithValue("provider", provider);
+        command.Parameters.AddWithValue("provider_subject", providerSubject);
+        command.Parameters.AddWithValue("account_id", accountId);
+        command.Parameters.AddWithValue("email", (object?)email ?? DBNull.Value);
+        command.Parameters.AddWithValue("email_verified", emailVerified);
+        command.Parameters.AddWithValue("display_name", (object?)displayName ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task CreateRefreshTokenAsync(
+        Guid accountId,
+        byte[] tokenHash,
+        string platform,
+        DateTimeOffset expiresAt,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            INSERT INTO refresh_tokens (id, account_id, token_hash, platform, expires_at)
+            VALUES (@id, @account_id, @token_hash, @platform, @expires_at);
+            """,
+            connection);
+        command.Parameters.AddWithValue("id", Guid.NewGuid());
+        command.Parameters.AddWithValue("account_id", accountId);
+        command.Parameters.AddWithValue("token_hash", tokenHash);
+        command.Parameters.AddWithValue("platform", platform);
+        command.Parameters.AddWithValue("expires_at", expiresAt);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<Guid?> ConsumeRefreshTokenAsync(byte[] tokenHash, CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            UPDATE refresh_tokens
+            SET revoked_at = now()
+            WHERE token_hash = @token_hash
+                AND revoked_at IS NULL
+                AND expires_at > now()
+            RETURNING account_id;
+            """,
+            connection);
+        command.Parameters.AddWithValue("token_hash", tokenHash);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is Guid accountId ? accountId : null;
+    }
+
+    public async Task CreateGameSessionAsync(
+        Guid accountId,
+        string gameSessionId,
+        byte[] accessTokenHash,
+        DateTimeOffset expiresAt,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            INSERT INTO game_sessions (id, account_id, access_token_hash, expires_at)
+            VALUES (@id, @account_id, @access_token_hash, @expires_at);
+            """,
+            connection);
+        command.Parameters.AddWithValue("id", gameSessionId);
+        command.Parameters.AddWithValue("account_id", accountId);
+        command.Parameters.AddWithValue("access_token_hash", accessTokenHash);
+        command.Parameters.AddWithValue("expires_at", expiresAt);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<AuthAccountResponse?> GetAccountAsync(Guid accountId, CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT
+                accounts.id,
+                CASE
+                    WHEN accounts.display_name IN ('Guest', 'Player')
+                    THEN COALESCE(
+                        NULLIF(apple_identity.display_name, ''),
+                        NULLIF(apple_identity.email, ''),
+                        accounts.display_name)
+                    ELSE accounts.display_name
+                END AS display_name,
+                accounts.is_guest
+            FROM accounts
+            LEFT JOIN LATERAL (
+                SELECT display_name, email
+                FROM account_identities
+                WHERE account_id = accounts.id AND provider = 'apple'
+                ORDER BY last_login_at DESC
+                LIMIT 1
+            ) apple_identity ON true
+            WHERE accounts.id = @account_id AND accounts.merged_into_account_id IS NULL;
+            """,
+            connection);
+        command.Parameters.AddWithValue("account_id", accountId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new AuthAccountResponse
+        {
+            Id = reader.GetGuid(0),
+            DisplayName = reader.GetString(1),
+            IsGuest = reader.GetBoolean(2)
+        };
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        return _dataSource.DisposeAsync();
+    }
+}
+
+internal sealed class AppleTokenVerifier : IDisposable
+{
+    private readonly AppleAuthOptions _options;
+    private readonly HttpClient _httpClient = new();
+    private AppleJwkSet? _cachedKeys;
+    private DateTimeOffset _cachedKeysUntil;
+
+    public AppleTokenVerifier(AppleAuthOptions options)
+    {
+        _options = options;
+    }
+
+    public async Task<AppleIdentity> VerifyAsync(string idToken, CancellationToken cancellationToken)
+    {
+        if (_options.AllowedAudiences.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "Apple auth is not configured. Set APPLE_CLIENT_ID to the iOS bundle id used for Sign in with Apple.");
+        }
+
+        var parts = idToken.Split('.');
+
+        if (parts.Length != 3)
+        {
+            throw new FormatException("Apple id token is not a compact JWT.");
+        }
+
+        using var headerDocument = JsonDocument.Parse(TokenEncoding.Base64UrlDecode(parts[0]));
+        using var payloadDocument = JsonDocument.Parse(TokenEncoding.Base64UrlDecode(parts[1]));
+        var header = headerDocument.RootElement;
+        var payload = payloadDocument.RootElement;
+        var kid = GetJsonString(header, "kid");
+        var alg = GetJsonString(header, "alg");
+
+        if (alg != "RS256" || string.IsNullOrWhiteSpace(kid))
+        {
+            throw new CryptographicException("Apple id token uses an unsupported signing key.");
+        }
+
+        var keys = await GetAppleKeysAsync(cancellationToken);
+        var key = keys.Keys.FirstOrDefault(candidate => candidate.Kid == kid && candidate.Kty == "RSA");
+
+        if (key == null)
+        {
+            _cachedKeys = null;
+            keys = await GetAppleKeysAsync(cancellationToken);
+            key = keys.Keys.FirstOrDefault(candidate => candidate.Kid == kid && candidate.Kty == "RSA")
+                ?? throw new CryptographicException("Apple signing key was not found.");
+        }
+
+        using var rsa = RSA.Create();
+        rsa.ImportParameters(new RSAParameters
+        {
+            Modulus = TokenEncoding.Base64UrlDecode(key.N),
+            Exponent = TokenEncoding.Base64UrlDecode(key.E)
+        });
+
+        var signedBytes = Encoding.ASCII.GetBytes($"{parts[0]}.{parts[1]}");
+        var signatureBytes = TokenEncoding.Base64UrlDecode(parts[2]);
+
+        if (!rsa.VerifyData(signedBytes, signatureBytes, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))
+        {
+            throw new CryptographicException("Apple id token signature is invalid.");
+        }
+
+        var issuer = GetJsonString(payload, "iss");
+        var subject = GetJsonString(payload, "sub");
+        var audience = GetJsonString(payload, "aud");
+        var expiresAt = DateTimeOffset.FromUnixTimeSeconds(GetJsonLong(payload, "exp"));
+
+        if (issuer != "https://appleid.apple.com"
+            || string.IsNullOrWhiteSpace(subject)
+            || !_options.AllowedAudiences.Contains(audience)
+            || expiresAt <= DateTimeOffset.UtcNow.AddMinutes(-1))
+        {
+            throw new CryptographicException("Apple id token claims are invalid.");
+        }
+
+        return new AppleIdentity(
+            subject,
+            GetJsonString(payload, "email"),
+            GetJsonBool(payload, "email_verified"));
+    }
+
+    public void Dispose()
+    {
+        _httpClient.Dispose();
+    }
+
+    private async Task<AppleJwkSet> GetAppleKeysAsync(CancellationToken cancellationToken)
+    {
+        if (_cachedKeys != null && _cachedKeysUntil > DateTimeOffset.UtcNow)
+        {
+            return _cachedKeys;
+        }
+
+        using var response = await _httpClient.GetAsync("https://appleid.apple.com/auth/keys", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        _cachedKeys = await JsonSerializer.DeserializeAsync<AppleJwkSet>(stream, JsonDefaults.Options, cancellationToken)
+            ?? throw new JsonException("Apple JWK response was empty.");
+        _cachedKeysUntil = DateTimeOffset.UtcNow.AddHours(24);
+        return _cachedKeys;
+    }
+
+    private static string GetJsonString(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return string.Empty;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.String => property.GetString() ?? string.Empty,
+            JsonValueKind.Array => property.EnumerateArray()
+                .FirstOrDefault(item => item.ValueKind == JsonValueKind.String)
+                .GetString() ?? string.Empty,
+            _ => string.Empty
+        };
+    }
+
+    private static bool GetJsonBool(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return false;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String => string.Equals(property.GetString(), "true", StringComparison.OrdinalIgnoreCase),
+            _ => false
+        };
+    }
+
+    private static long GetJsonLong(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var property)
+            && property.TryGetInt64(out var value)
+            ? value
+            : 0;
+    }
+}
+
+internal sealed class AppleAuthOptions
+{
+    public AppleAuthOptions(IReadOnlySet<string> allowedAudiences)
+    {
+        AllowedAudiences = allowedAudiences;
+    }
+
+    public IReadOnlySet<string> AllowedAudiences { get; }
+
+    public static AppleAuthOptions FromEnvironment()
+    {
+        var audiences = FirstNonEmpty(
+                Environment.GetEnvironmentVariable("APPLE_CLIENT_ID"),
+                Environment.GetEnvironmentVariable("APPLE_BUNDLE_ID"))
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return new AppleAuthOptions(audiences);
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return string.Empty;
+    }
+}
+
+internal sealed class AppleJwkSet
+{
+    public AppleJwk[] Keys { get; set; } = [];
+}
+
+internal sealed class AppleJwk
+{
+    public string Kid { get; set; } = string.Empty;
+    public string Kty { get; set; } = string.Empty;
+    public string N { get; set; } = string.Empty;
+    public string E { get; set; } = string.Empty;
+}
+
+internal sealed record AppleIdentity(string Subject, string? Email, bool EmailVerified);
+
+internal sealed class AuthResult
+{
+    private AuthResult(AuthResponse? response, string errorCode, string errorMessage)
+    {
+        Response = response;
+        ErrorCode = errorCode;
+        ErrorMessage = errorMessage;
+    }
+
+    public AuthResponse? Response { get; }
+    public string ErrorCode { get; }
+    public string ErrorMessage { get; }
+    public bool IsSuccess => Response != null;
+
+    public static AuthResult Succeeded(AuthResponse response)
+    {
+        return new AuthResult(response, string.Empty, string.Empty);
+    }
+
+    public static AuthResult Failed(string code, string message)
+    {
+        return new AuthResult(null, code, message);
+    }
+}
+
+internal sealed class GuestAuthRequest
+{
+    public string installId { get; set; } = string.Empty;
+    public string? platform { get; set; }
+    public string? displayName { get; set; }
+}
+
+internal sealed class RefreshAuthRequest
+{
+    public string refreshToken { get; set; } = string.Empty;
+    public string? platform { get; set; }
+}
+
+internal sealed class AppleAuthRequest
+{
+    public string idToken { get; set; } = string.Empty;
+    public string? platform { get; set; }
+    public string? displayName { get; set; }
+}
+
+internal sealed class AuthResponse
+{
+    public string accountId { get; set; } = string.Empty;
+    public string displayName { get; set; } = "Player";
+    public bool isGuest { get; set; }
+    public string accessToken { get; set; } = string.Empty;
+    public string refreshToken { get; set; } = string.Empty;
+    public string gameSessionId { get; set; } = string.Empty;
+    public int expiresInSeconds { get; set; }
+}
+
+internal sealed class AuthErrorResponse
+{
+    public AuthErrorResponse(string code, string message)
+    {
+        this.code = code;
+        this.message = message;
+    }
+
+    public string code { get; }
+    public string message { get; }
+}
+
+internal sealed class AuthAccountResponse
+{
+    public Guid Id { get; set; }
+    public string DisplayName { get; set; } = "Player";
+    public bool IsGuest { get; set; }
+}
+
+internal static class TokenEncoding
+{
+    public static string Base64UrlEncode(ReadOnlySpan<byte> bytes)
+    {
+        return Convert.ToBase64String(bytes)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+    }
+
+    public static byte[] Base64UrlDecode(string value)
+    {
+        var padded = value.Replace('-', '+').Replace('_', '/');
+
+        switch (padded.Length % 4)
+        {
+            case 2:
+                padded += "==";
+                break;
+            case 3:
+                padded += "=";
+                break;
+        }
+
+        return Convert.FromBase64String(padded);
+    }
+}
 
 internal sealed class PostgresVoxelEditStore : IAsyncDisposable
 {

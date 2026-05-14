@@ -39,6 +39,13 @@ public static class IosLocalNetworkPostprocessor
         project.SetBuildProperty(mainTargetGuid, "ENABLE_BITCODE", "NO");
         project.SetBuildProperty(frameworkTargetGuid, "ENABLE_BITCODE", "NO");
         project.WriteToFile(projectPath);
+
+        var capabilityManager = new ProjectCapabilityManager(
+            projectPath,
+            "Unity-iPhone.entitlements",
+            targetGuid: mainTargetGuid);
+        capabilityManager.AddSignInWithApple();
+        capabilityManager.WriteToFile();
     }
 }
 #endif

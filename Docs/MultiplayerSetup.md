@@ -49,9 +49,12 @@ TURN_REALM=dev.augmego.ca
 TURN_STATIC_AUTH_SECRET=change_me
 TURN_MIN_PORT=49160
 TURN_MAX_PORT=49200
+APPLE_CLIENT_ID=com.Unity-Technologies.com.unity.template.urp-blank
 ```
 
 Use `APP_DOMAIN=prod.augmego.ca` or another host name for a different environment. Set real database and TURN secrets before putting the stack on a public droplet. If `.env` is missing, compose defaults to the dev values in `docker-compose.yml`.
+
+`APPLE_CLIENT_ID` must match the iOS bundle identifier configured for Sign in with Apple. The current project default is still Unity's template bundle id; change it before using real Apple auth in TestFlight/App Store builds.
 
 For WSS, place your certificate files at:
 
@@ -68,6 +71,10 @@ For public WebRTC relay, open TCP/UDP `3478` and UDP `49160-49200` on the host f
 2. Press Play.
 3. The client auto-connects to `dev.augmego.ca:7777`.
 4. Drag the left half of the game view to move and the right half to turn the camera. WASD/arrow keys also work in the editor.
+
+On first launch, `GameAuthClient` signs in as a guest through `/auth/guest`, stores a refresh token locally, then gives `UdpGameClient` an auth-issued game session id. The server rejects unauthenticated `HELLO2`/`INPUT2`/`EDIT2` session ids, so clients now wait for guest auth before UDP gameplay connects.
+
+Guest players see a small `Save` button. On iOS player builds, tapping it starts Sign in with Apple, verifies the Apple identity token on the server, and links that Apple identity to the current guest account. In the Editor and non-iOS builds, the button is a placeholder until Google Play Games and Steam providers are added.
 
 The connection overlay is hidden by default. For manual host/port testing, enable `showConnectionOverlay` on the `UdpGameClient` component in the Inspector.
 
