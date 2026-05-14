@@ -707,7 +707,7 @@ internal sealed class RtcSignalingHub : IDisposable
 
     private readonly RtcSignalingOptions _options;
     private readonly ConcurrentDictionary<int, RtcClientConnection> _clientsByPlayerId = new();
-    private readonly ConcurrentDictionary<int, bool> _mediaEnabledByPlayerId = new();
+    private readonly ConcurrentDictionary<int, RtcMediaState> _mediaStateByPlayerId = new();
 
     public RtcSignalingHub(RtcSignalingOptions options)
     {
@@ -783,7 +783,7 @@ internal sealed class RtcSignalingHub : IDisposable
                 && ReferenceEquals(current, connection))
             {
                 _clientsByPlayerId.TryRemove(playerId, out _);
-                _mediaEnabledByPlayerId.TryRemove(playerId, out _);
+                _mediaStateByPlayerId.TryRemove(playerId, out _);
                 await BroadcastMediaStateAsync(CancellationToken.None);
             }
 
@@ -793,7 +793,7 @@ internal sealed class RtcSignalingHub : IDisposable
 
     public void RemovePlayer(int playerId)
     {
-        _mediaEnabledByPlayerId.TryRemove(playerId, out _);
+        _mediaStateByPlayerId.TryRemove(playerId, out _);
 
         if (_clientsByPlayerId.TryRemove(playerId, out var connection))
         {
@@ -825,14 +825,23 @@ internal sealed class RtcSignalingHub : IDisposable
             case "media":
                 var enabled = root.TryGetProperty("enabled", out var enabledElement)
                     && enabledElement.ValueKind == JsonValueKind.True;
+                var videoRotation = root.TryGetProperty("videoRotation", out var videoRotationElement)
+                    && videoRotationElement.TryGetInt32(out var parsedVideoRotation)
+                    ? NormalizeVideoRotation(parsedVideoRotation)
+                    : 0;
+                var videoMirrored = root.TryGetProperty("videoMirrored", out var videoMirroredElement)
+                    && videoMirroredElement.ValueKind == JsonValueKind.True;
 
                 if (enabled)
                 {
-                    _mediaEnabledByPlayerId[connection.PlayerId] = true;
+                    _mediaStateByPlayerId[connection.PlayerId] = new RtcMediaState(
+                        Enabled: true,
+                        VideoRotation: videoRotation,
+                        VideoMirrored: videoMirrored);
                 }
                 else
                 {
-                    _mediaEnabledByPlayerId.TryRemove(connection.PlayerId, out _);
+                    _mediaStateByPlayerId.TryRemove(connection.PlayerId, out _);
                 }
 
                 await BroadcastMediaStateAsync(cancellationToken);
@@ -874,7 +883,9 @@ internal sealed class RtcSignalingHub : IDisposable
             .Select(playerId => new
             {
                 playerId,
-                enabled = _mediaEnabledByPlayerId.ContainsKey(playerId)
+                enabled = _mediaStateByPlayerId.TryGetValue(playerId, out var mediaState) && mediaState.Enabled,
+                videoRotation = mediaState?.VideoRotation ?? 0,
+                videoMirrored = mediaState?.VideoMirrored ?? false
             })
             .ToArray();
 
@@ -974,6 +985,18 @@ internal sealed class RtcSignalingHub : IDisposable
             : string.Empty;
     }
 
+    private static int NormalizeVideoRotation(int degrees)
+    {
+        var normalized = degrees % 360;
+
+        if (normalized < 0)
+        {
+            normalized += 360;
+        }
+
+        return ((normalized + 45) / 90 * 90) % 360;
+    }
+
     private static Task CloseSocketAsync(WebSocket socket, string reason, CancellationToken cancellationToken)
     {
         return socket.State == WebSocketState.Open
@@ -1007,6 +1030,8 @@ internal sealed class RtcSignalingHub : IDisposable
             }
         }
     }
+
+    private sealed record RtcMediaState(bool Enabled, int VideoRotation, bool VideoMirrored);
 }
 
 internal sealed class RtcSignalingOptions

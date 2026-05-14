@@ -19,6 +19,7 @@ namespace BasicMultiplayer
         private const int MicrophoneSampleRate = 48000;
         private const float AvButtonSize = 72f;
         private const float CameraStartTimeoutSeconds = 5f;
+        private const float MicrophoneStartTimeoutSeconds = 3f;
 
         [SerializeField] private UdpGameClient client;
         [SerializeField] private bool showAvButton = true;
@@ -29,6 +30,7 @@ namespace BasicMultiplayer
         private readonly ConcurrentQueue<string> _incomingSignalingMessages = new();
         private readonly Dictionary<int, PeerState> _peersByPlayerId = new();
         private readonly Dictionary<int, bool> _remoteMediaEnabledByPlayerId = new();
+        private readonly Dictionary<int, RemoteVideoLayout> _remoteVideoLayoutsByPlayerId = new();
         private readonly SemaphoreSlim _webSocketSendLock = new(1, 1);
         private CancellationTokenSource _lifetimeCancellation;
         private ClientWebSocket _webSocket;
@@ -46,8 +48,11 @@ namespace BasicMultiplayer
         private bool _wantsPublishing;
         private bool _isPublishing;
         private bool _startingPublishing;
+        private int _localVideoRotationDegrees;
+        private bool _localVideoVerticallyMirrored;
 
         public event Action<int, Texture> RemoteVideoReceived;
+        public event Action<int, int, bool> RemoteVideoLayoutReceived;
         public event Action<int, AudioStreamTrack> RemoteAudioReceived;
         public event Action<int> RemotePeerClosed;
 
@@ -74,6 +79,11 @@ namespace BasicMultiplayer
             if (_wantsPublishing && !_isPublishing && !_startingPublishing)
             {
                 StartCoroutine(StartPublishingCoroutine());
+            }
+
+            if (_isPublishing)
+            {
+                RefreshLocalVideoLayout();
             }
         }
 
@@ -317,6 +327,7 @@ namespace BasicMultiplayer
         private void ApplyMediaState(MediaStatePlayerMessage[] players)
         {
             _remoteMediaEnabledByPlayerId.Clear();
+            _remoteVideoLayoutsByPlayerId.Clear();
 
             if (players != null)
             {
@@ -325,6 +336,11 @@ namespace BasicMultiplayer
                     if (player.playerId != client.LocalPlayerId && player.enabled)
                     {
                         _remoteMediaEnabledByPlayerId[player.playerId] = true;
+                        var layout = new RemoteVideoLayout(
+                            NormalizeVideoRotation(player.videoRotation),
+                            player.videoMirrored);
+                        _remoteVideoLayoutsByPlayerId[player.playerId] = layout;
+                        RemoteVideoLayoutReceived?.Invoke(player.playerId, layout.RotationDegrees, layout.Mirrored);
                     }
                 }
             }
@@ -369,6 +385,7 @@ namespace BasicMultiplayer
         private IEnumerator StartPublishingCoroutine()
         {
             _startingPublishing = true;
+            IosWebRtcAudioSession.Configure();
 
             yield return Application.RequestUserAuthorization(UserAuthorization.WebCam | UserAuthorization.Microphone);
 
@@ -458,23 +475,42 @@ namespace BasicMultiplayer
             }
 
             _localVideoTrack = new VideoStreamTrack(_webCamTexture);
+            RefreshLocalVideoLayout(forceBroadcast: false);
         }
 
         private IEnumerator StartMicrophoneCoroutine()
         {
             if (Microphone.devices.Length == 0)
             {
+                Debug.LogWarning("AV microphone start skipped: no microphone devices were reported by Unity.");
                 yield break;
             }
 
             _microphoneDeviceName = Microphone.devices[0];
-            _microphoneClip = Microphone.Start(_microphoneDeviceName, loop: true, lengthSec: 1, frequency: MicrophoneSampleRate);
+            var sampleRate = GetMicrophoneSampleRate(_microphoneDeviceName);
+            _microphoneClip = Microphone.Start(_microphoneDeviceName, loop: true, lengthSec: 1, frequency: sampleRate);
 
-            var timeoutAt = Time.realtimeSinceStartup + 2f;
+            if (_microphoneClip == null)
+            {
+                Debug.LogWarning($"AV microphone start failed: '{_microphoneDeviceName}' did not return an AudioClip.");
+                _microphoneDeviceName = null;
+                yield break;
+            }
+
+            var timeoutAt = Time.realtimeSinceStartup + MicrophoneStartTimeoutSeconds;
 
             while (Microphone.GetPosition(_microphoneDeviceName) <= 0 && Time.realtimeSinceStartup < timeoutAt)
             {
                 yield return null;
+            }
+
+            if (Microphone.GetPosition(_microphoneDeviceName) <= 0)
+            {
+                Debug.LogWarning($"AV microphone start failed: '{_microphoneDeviceName}' did not produce samples before timeout.");
+                Microphone.End(_microphoneDeviceName);
+                _microphoneDeviceName = null;
+                _microphoneClip = null;
+                yield break;
             }
 
             if (_microphoneSource == null)
@@ -483,12 +519,16 @@ namespace BasicMultiplayer
                 _microphoneSource.playOnAwake = false;
                 _microphoneSource.loop = true;
                 _microphoneSource.spatialBlend = 0f;
-                _microphoneSource.volume = 0.001f;
             }
 
+            _microphoneSource.volume = 1f;
+            _microphoneSource.mute = false;
             _microphoneSource.clip = _microphoneClip;
-            _microphoneSource.Play();
             _localAudioTrack = new AudioStreamTrack(_microphoneSource);
+            _localAudioTrack.Loopback = false;
+            _microphoneSource.Play();
+
+            Debug.Log($"AV microphone started: '{_microphoneDeviceName}' at {sampleRate} Hz.");
         }
 
         private PeerState GetOrCreatePeer(int remotePlayerId)
@@ -695,7 +735,9 @@ namespace BasicMultiplayer
             return SendClientMessageAsync(new ClientMessage
             {
                 type = "media",
-                enabled = enabled
+                enabled = enabled,
+                videoRotation = enabled ? _localVideoRotationDegrees : 0,
+                videoMirrored = enabled && _localVideoVerticallyMirrored
             }, _lifetimeCancellation.Token);
         }
 
@@ -765,6 +807,7 @@ namespace BasicMultiplayer
             }
 
             _peersByPlayerId.Remove(remotePlayerId);
+            _remoteVideoLayoutsByPlayerId.Remove(remotePlayerId);
             peer.Dispose();
             RemotePeerClosed?.Invoke(remotePlayerId);
         }
@@ -799,11 +842,39 @@ namespace BasicMultiplayer
             _microphoneClip = null;
         }
 
+        private void RefreshLocalVideoLayout(bool forceBroadcast = true)
+        {
+            if (_webCamTexture == null)
+            {
+                return;
+            }
+
+            var rotation = NormalizeVideoRotation(_webCamTexture.videoRotationAngle);
+            var mirrored = _webCamTexture.videoVerticallyMirrored;
+
+            if (!forceBroadcast
+                || (rotation == _localVideoRotationDegrees && mirrored == _localVideoVerticallyMirrored))
+            {
+                _localVideoRotationDegrees = rotation;
+                _localVideoVerticallyMirrored = mirrored;
+                return;
+            }
+
+            _localVideoRotationDegrees = rotation;
+            _localVideoVerticallyMirrored = mirrored;
+
+            if (_hasRtcConfig)
+            {
+                _ = SendMediaEnabledAsync(true);
+            }
+        }
+
         private void ResetSignalingState()
         {
             _hasRtcConfig = false;
             _boundPlayerId = 0;
             _remoteMediaEnabledByPlayerId.Clear();
+            _remoteVideoLayoutsByPlayerId.Clear();
             CloseAllPeers();
 
             if (_isPublishing)
@@ -847,6 +918,49 @@ namespace BasicMultiplayer
             return WebCamTexture.devices.Length > 0 ? WebCamTexture.devices[0].name : string.Empty;
         }
 
+        private static int GetMicrophoneSampleRate(string deviceName)
+        {
+            Microphone.GetDeviceCaps(deviceName, out var minFrequency, out var maxFrequency);
+
+            if (minFrequency == 0 && maxFrequency == 0)
+            {
+                return MicrophoneSampleRate;
+            }
+
+            if (maxFrequency > 0)
+            {
+                return Mathf.Clamp(MicrophoneSampleRate, Mathf.Max(1, minFrequency), maxFrequency);
+            }
+
+            return Mathf.Max(1, minFrequency);
+        }
+
+        private static int NormalizeVideoRotation(int degrees)
+        {
+            var normalized = degrees % 360;
+
+            if (normalized < 0)
+            {
+                normalized += 360;
+            }
+
+            return ((normalized + 45) / 90 * 90) % 360;
+        }
+
+        public bool TryGetRemoteVideoLayout(int playerId, out int rotationDegrees, out bool mirrored)
+        {
+            if (_remoteVideoLayoutsByPlayerId.TryGetValue(playerId, out var layout))
+            {
+                rotationDegrees = layout.RotationDegrees;
+                mirrored = layout.Mirrored;
+                return true;
+            }
+
+            rotationDegrees = 0;
+            mirrored = false;
+            return false;
+        }
+
         private static float GetUiScale()
         {
 #if UNITY_IOS || UNITY_ANDROID
@@ -871,6 +985,8 @@ namespace BasicMultiplayer
             public string sessionId;
             public int playerId;
             public bool enabled;
+            public int videoRotation;
+            public bool videoMirrored;
             public int to;
             public SignalPayload payload;
         }
@@ -899,6 +1015,8 @@ namespace BasicMultiplayer
         {
             public int playerId;
             public bool enabled;
+            public int videoRotation;
+            public bool videoMirrored;
         }
 
         [Serializable]
@@ -937,6 +1055,18 @@ namespace BasicMultiplayer
                 Connection?.Close();
                 Connection?.Dispose();
             }
+        }
+
+        private readonly struct RemoteVideoLayout
+        {
+            public RemoteVideoLayout(int rotationDegrees, bool mirrored)
+            {
+                RotationDegrees = rotationDegrees;
+                Mirrored = mirrored;
+            }
+
+            public int RotationDegrees { get; }
+            public bool Mirrored { get; }
         }
     }
 }

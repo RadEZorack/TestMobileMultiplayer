@@ -75,6 +75,10 @@ Tap the `CAM` button, or press `C` in the editor, to cycle the camera from far c
 
 Tap the `AV` button to request camera/microphone permission and share WebRTC media with peers. Remote feeds appear as hovering video panels above player capsules; tapping `AV` again closes local media and peer connections.
 
+The publishing client sends its camera rotation metadata through signaling, so iPhone portrait camera feeds render upright on remote billboards.
+
+On iOS, the client configures the audio session for WebRTC playback/recording and prefers speaker output. Remote voice playback is currently 2D so mobile testing is loud and predictable; spatial voice can come back once the AV path is stable.
+
 If the Unity Editor is set to the iOS build target and throws `EntryPointNotFoundException: RegisterDebugLog` during assembly reload, run `Tools/patch-unity-webrtc-ios-editor.sh`. It patches the cached `com.unity.webrtc` package so `WebRTC.Lib` uses `__Internal` only for `UNITY_IOS && !UNITY_EDITOR`. The iOS player still uses `__Internal`; the Editor needs the package's macOS `libwebrtc.dylib`.
 
 When testing multiple desktop clients on one Mac, the physical webcam may only produce frames for one process at a time. If a desktop client cannot start camera frames, it will still join AV signaling/audio, but no blank white video panel is shown for that peer.
