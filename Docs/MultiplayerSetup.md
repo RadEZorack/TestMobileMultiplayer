@@ -79,7 +79,7 @@ The publishing client sends its camera rotation metadata through signaling, so i
 
 On iOS, the client configures the audio session for WebRTC playback/recording and prefers speaker output. Remote voice playback is currently 2D so mobile testing is loud and predictable; spatial voice can come back once the AV path is stable.
 
-If the Unity Editor is set to the iOS build target and throws `EntryPointNotFoundException: RegisterDebugLog` during assembly reload, run `Tools/patch-unity-webrtc-ios-editor.sh`. It patches the cached `com.unity.webrtc` package so `WebRTC.Lib` uses `__Internal` only for `UNITY_IOS && !UNITY_EDITOR`. The iOS player still uses `__Internal`; the Editor needs the package's macOS `libwebrtc.dylib`.
+The editor automatically patches Unity WebRTC's cached `WebRTC.cs` package file on startup/script reload so `WebRTC.Lib` uses `__Internal` only for `UNITY_IOS && !UNITY_EDITOR`. The iOS player still uses `__Internal`; the Editor needs the package's macOS `libwebrtc.dylib`. If Unity regenerates the package cache and you need to patch it manually, use the Unity menu item `Tools > Patch Unity WebRTC iOS Editor Bug` or run `Tools/patch-unity-webrtc-ios-editor.sh`.
 
 When testing multiple desktop clients on one Mac, the physical webcam may only produce frames for one process at a time. If a desktop client cannot start camera frames, it will still join AV signaling/audio, but no blank white video panel is shown for that peer.
 
