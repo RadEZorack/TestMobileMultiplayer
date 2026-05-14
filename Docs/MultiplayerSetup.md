@@ -77,6 +77,8 @@ Tap the `AV` button to request camera/microphone permission and share WebRTC med
 
 If the Unity Editor is set to the iOS build target and throws `EntryPointNotFoundException: RegisterDebugLog` during assembly reload, run `Tools/patch-unity-webrtc-ios-editor.sh`. It patches the cached `com.unity.webrtc` package so `WebRTC.Lib` uses `__Internal` only for `UNITY_IOS && !UNITY_EDITOR`. The iOS player still uses `__Internal`; the Editor needs the package's macOS `libwebrtc.dylib`.
 
+When testing multiple desktop clients on one Mac, the physical webcam may only produce frames for one process at a time. If a desktop client cannot start camera frames, it will still join AV signaling/audio, but no blank white video panel is shown for that peer.
+
 Aim with the center crosshair. Use the on-screen `L` button or left mouse button to remove the highlighted voxel, and the `R` button or right mouse button to place a voxel on the highlighted face. These edits are sent over UDP and replayed on other clients.
 
 To test a second player, run another Unity editor instance, or make a standalone desktop build and connect both to `127.0.0.1`.

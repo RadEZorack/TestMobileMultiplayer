@@ -18,6 +18,7 @@ namespace BasicMultiplayer
         private const int RequestedCameraFps = 15;
         private const int MicrophoneSampleRate = 48000;
         private const float AvButtonSize = 72f;
+        private const float CameraStartTimeoutSeconds = 5f;
 
         [SerializeField] private UdpGameClient client;
         [SerializeField] private bool showAvButton = true;
@@ -390,7 +391,7 @@ namespace BasicMultiplayer
 
             if (hasCameraPermission)
             {
-                StartCamera();
+                yield return StartCameraCoroutine();
             }
 
             if (hasMicrophonePermission)
@@ -417,13 +418,45 @@ namespace BasicMultiplayer
             RefreshPeerConnections();
         }
 
-        private void StartCamera()
+        private IEnumerator StartCameraCoroutine()
         {
+            if (WebCamTexture.devices.Length == 0)
+            {
+                Debug.LogWarning("AV camera start skipped: no camera devices were reported by Unity.");
+                yield break;
+            }
+
             var deviceName = GetPreferredCameraDeviceName();
             _webCamTexture = string.IsNullOrEmpty(deviceName)
                 ? new WebCamTexture(RequestedCameraWidth, RequestedCameraHeight, RequestedCameraFps)
                 : new WebCamTexture(deviceName, RequestedCameraWidth, RequestedCameraHeight, RequestedCameraFps);
             _webCamTexture.Play();
+
+            var timeoutAt = Time.realtimeSinceStartup + CameraStartTimeoutSeconds;
+
+            while (_wantsPublishing
+                && Time.realtimeSinceStartup < timeoutAt
+                && (!_webCamTexture.didUpdateThisFrame || _webCamTexture.width <= 16 || _webCamTexture.height <= 16))
+            {
+                yield return null;
+            }
+
+            if (!_wantsPublishing)
+            {
+                yield break;
+            }
+
+            if (!_webCamTexture.isPlaying || _webCamTexture.width <= 16 || _webCamTexture.height <= 16)
+            {
+                Debug.LogWarning(
+                    $"AV camera start failed: '{deviceName}' did not produce frames before timeout. " +
+                    "If multiple local clients are running on the same Mac, only one may be able to use the physical camera.");
+                _webCamTexture.Stop();
+                Destroy(_webCamTexture);
+                _webCamTexture = null;
+                yield break;
+            }
+
             _localVideoTrack = new VideoStreamTrack(_webCamTexture);
         }
 

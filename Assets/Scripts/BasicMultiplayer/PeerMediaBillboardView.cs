@@ -12,6 +12,10 @@ namespace BasicMultiplayer
         [SerializeField] private Vector2 billboardSize = new(1.15f, 0.78f);
 
         private readonly Dictionary<int, MediaPanel> _panelsByPlayerId = new();
+        private static readonly int BaseMapProperty = Shader.PropertyToID("_BaseMap");
+        private static readonly int MainTextureProperty = Shader.PropertyToID("_MainTex");
+        private static readonly int BaseColorProperty = Shader.PropertyToID("_BaseColor");
+        private static readonly int ColorProperty = Shader.PropertyToID("_Color");
         private Shader _unlitTextureShader;
 
         private void Awake()
@@ -28,6 +32,7 @@ namespace BasicMultiplayer
 
             _unlitTextureShader = Shader.Find("Universal Render Pipeline/Unlit")
                 ?? Shader.Find("Unlit/Texture")
+                ?? Shader.Find("Sprites/Default")
                 ?? Shader.Find("Unlit/Color")
                 ?? Shader.Find("Standard");
         }
@@ -84,7 +89,7 @@ namespace BasicMultiplayer
                     }
 
                     panel.Root.transform.localPosition = localOffset;
-                    panel.Root.SetActive(panel.HasVideo || panel.HasAudio);
+                    panel.Root.SetActive(panel.HasVideo);
                 }
                 else
                 {
@@ -104,7 +109,7 @@ namespace BasicMultiplayer
         {
             var panel = GetOrCreatePanel(playerId);
             panel.Renderer.sharedMaterial = panel.Material;
-            panel.Material.mainTexture = texture;
+            SetMaterialTexture(panel.Material, texture);
             panel.HasVideo = texture != null;
         }
 
@@ -142,12 +147,14 @@ namespace BasicMultiplayer
             var root = GameObject.CreatePrimitive(PrimitiveType.Quad);
             root.name = $"Player {playerId} AV Billboard";
             root.transform.localScale = new Vector3(billboardSize.x, billboardSize.y, 1f);
+            root.SetActive(false);
 
             var renderer = root.GetComponent<MeshRenderer>();
             var material = new Material(_unlitTextureShader)
             {
                 color = Color.white
             };
+            SetMaterialColor(material, Color.white);
             renderer.sharedMaterial = material;
 
             var collider = root.GetComponent<Collider>();
@@ -163,6 +170,36 @@ namespace BasicMultiplayer
             panel = new MediaPanel(root, renderer, material, audioSource);
             _panelsByPlayerId[playerId] = panel;
             return panel;
+        }
+
+        private static void SetMaterialTexture(Material material, Texture texture)
+        {
+            material.mainTexture = texture;
+
+            if (material.HasProperty(BaseMapProperty))
+            {
+                material.SetTexture(BaseMapProperty, texture);
+            }
+
+            if (material.HasProperty(MainTextureProperty))
+            {
+                material.SetTexture(MainTextureProperty, texture);
+            }
+        }
+
+        private static void SetMaterialColor(Material material, Color color)
+        {
+            material.color = color;
+
+            if (material.HasProperty(BaseColorProperty))
+            {
+                material.SetColor(BaseColorProperty, color);
+            }
+
+            if (material.HasProperty(ColorProperty))
+            {
+                material.SetColor(ColorProperty, color);
+            }
         }
 
         private sealed class MediaPanel
