@@ -163,7 +163,7 @@ namespace BasicMultiplayer
             {
                 installId = GetOrCreateInstallId(),
                 platform = GetPlatformName(),
-                displayName = "Guest"
+                displayName = DeviceDisplayNameStore.Get()
             };
 
             yield return PostAuthCoroutine("/auth/guest", request, bearerToken: null);
@@ -235,6 +235,7 @@ namespace BasicMultiplayer
             udpClient?.Disconnect();
             PlayerPrefs.DeleteKey(RefreshTokenKey);
             PlayerPrefs.DeleteKey(InstallIdKey);
+            DeviceDisplayNameStore.Clear();
             PlayerPrefs.Save();
 
             _isReady = false;

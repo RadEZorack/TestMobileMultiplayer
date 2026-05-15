@@ -11,10 +11,9 @@ namespace BasicMultiplayer
 
             if (existingClient != null)
             {
-                if (existingClient.GetComponent<GameAuthClient>() == null)
-                {
-                    existingClient.gameObject.AddComponent<GameAuthClient>();
-                }
+                EnsureComponent<GameAuthClient>(existingClient.gameObject);
+                EnsureComponent<WebRtcPeerMediaClient>(existingClient.gameObject);
+                EnsureComponent<WorldChatView>(existingClient.gameObject);
 
                 return;
             }
@@ -26,9 +25,18 @@ namespace BasicMultiplayer
             root.AddComponent<VoxelPlayMultiplayerDemo>();
             root.AddComponent<WebRtcPeerMediaClient>();
             root.AddComponent<PeerMediaBillboardView>();
+            root.AddComponent<WorldChatView>();
 
             EnsureCamera();
             EnsureArena();
+        }
+
+        private static void EnsureComponent<T>(GameObject target) where T : Component
+        {
+            if (target.GetComponent<T>() == null)
+            {
+                target.AddComponent<T>();
+            }
         }
 
         private static void EnsureCamera()

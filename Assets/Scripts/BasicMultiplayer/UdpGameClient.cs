@@ -83,6 +83,7 @@ namespace BasicMultiplayer
         private void Start()
         {
             Application.runInBackground = true;
+            playerName = DeviceDisplayNameStore.Get();
 
             if (authClient == null)
             {
@@ -423,6 +424,11 @@ namespace BasicMultiplayer
             Send($"HELLO2 {SessionId} {SanitizeToken(playerName, fallback: "Player")} {_lastAppliedVoxelEditSequence}");
         }
 
+        public void SetLocalDisplayName(string displayName)
+        {
+            playerName = DeviceDisplayNameStore.Sanitize(displayName);
+        }
+
         public void SendVoxelEdit(VoxelEditAction action, Vector3Int cell, string voxelType)
         {
             var actionToken = action == VoxelEditAction.Remove ? "REMOVE" : "PLACE";
@@ -620,7 +626,7 @@ namespace BasicMultiplayer
 
                 var position = touch.position.ReadValue();
 
-                if (!IsJoystickSide(position, rightSide))
+                if (IsUiPointerBlocked(position) || !IsJoystickSide(position, rightSide))
                 {
                     continue;
                 }
@@ -654,6 +660,13 @@ namespace BasicMultiplayer
 
             if (mouse.leftButton.wasPressedThisFrame)
             {
+                if (IsUiPointerBlocked(position))
+                {
+                    ResetMousePointer(ref _moveJoystickPointerId);
+                    ResetMousePointer(ref _lookJoystickPointerId);
+                    return;
+                }
+
                 if (IsJoystickSide(position, rightSide: true))
                 {
                     BeginMouseJoystick(ref _lookJoystickPointerId, ref _lookJoystickOrigin, ref _lookJoystickCurrent, position);
@@ -765,6 +778,7 @@ namespace BasicMultiplayer
 
                 if (touch.phase == TouchPhase.Ended
                     || touch.phase == TouchPhase.Canceled
+                    || IsUiPointerBlocked(touch.position)
                     || !IsJoystickSide(touch.position, rightSide))
                 {
                     continue;
@@ -790,6 +804,13 @@ namespace BasicMultiplayer
 
             if (Input.GetMouseButtonDown(0))
             {
+                if (IsUiPointerBlocked(position))
+                {
+                    ResetMousePointer(ref _moveJoystickPointerId);
+                    ResetMousePointer(ref _lookJoystickPointerId);
+                    return;
+                }
+
                 if (IsJoystickSide(position, rightSide: true))
                 {
                     BeginMouseJoystick(ref _lookJoystickPointerId, ref _lookJoystickOrigin, ref _lookJoystickCurrent, position);
@@ -832,6 +853,11 @@ namespace BasicMultiplayer
             }
 
             return position.x <= Screen.width * LeftJoystickScreenMax;
+        }
+
+        private static bool IsUiPointerBlocked(Vector2 screenPosition)
+        {
+            return WorldChatView.IsScreenPositionOverAnyChat(screenPosition);
         }
 
         private static void BeginMouseJoystick(
@@ -903,7 +929,14 @@ namespace BasicMultiplayer
             }
 
             GUILayout.Label("Name", GUILayout.Width(52f), GUILayout.Height(42f));
-            playerName = GUILayout.TextField(playerName, GUILayout.ExpandWidth(true), GUILayout.Height(42f));
+            var editedPlayerName = GUILayout.TextField(playerName, GUILayout.ExpandWidth(true), GUILayout.Height(42f));
+
+            if (editedPlayerName != playerName)
+            {
+                SetLocalDisplayName(editedPlayerName);
+                DeviceDisplayNameStore.Set(playerName);
+            }
+
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();

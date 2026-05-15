@@ -1224,6 +1224,11 @@ namespace BasicMultiplayer
 
         private bool IsWorldBlockClick(Vector2 screenPosition, float uiScale)
         {
+            if (WorldChatView.IsScreenPositionOverAnyChat(screenPosition))
+            {
+                return false;
+            }
+
             if (showBlockActionButtons && IsPointerOverBlockActionButtons(screenPosition, uiScale))
             {
                 return false;

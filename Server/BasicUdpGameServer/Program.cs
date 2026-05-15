@@ -513,6 +513,7 @@ internal sealed class BasicUdpGameServer : IDisposable
             {
                 _playersByClientKey.TryRemove(clientKey, out _);
                 _signalingHub.RemovePlayer(player.Id);
+                _ = _signalingHub.BroadcastPlayerNamesAsync(GetPlayerNames(), CancellationToken.None);
                 Console.WriteLine($"Player {player.Id} timed out.");
                 continue;
             }
@@ -680,6 +681,47 @@ internal sealed class BasicUdpGameServer : IDisposable
         return true;
     }
 
+    public PlayerNameDto[] GetPlayerNames()
+    {
+        return _playersByClientKey.Values
+            .OrderBy(player => player.Id)
+            .Select(player => new PlayerNameDto(player.Id, player.Name))
+            .ToArray();
+    }
+
+    public string GetPlayerDisplayName(int playerId)
+    {
+        return _playersByClientKey.Values.FirstOrDefault(player => player.Id == playerId)?.Name ?? "Player";
+    }
+
+    public NameChangeResult TryChangePlayerDisplayName(int playerId, string requestedName, DateTimeOffset now)
+    {
+        var player = _playersByClientKey.Values.FirstOrDefault(candidate => candidate.Id == playerId);
+
+        if (player == null)
+        {
+            return new NameChangeResult(false, "Player", 0);
+        }
+
+        var displayName = RealtimeTextPolicy.SanitizeDisplayName(requestedName);
+
+        if (string.Equals(player.Name, displayName, StringComparison.Ordinal))
+        {
+            return new NameChangeResult(true, player.Name, 0);
+        }
+
+        var retryAfterSeconds = RealtimeTextPolicy.GetNameChangeRetryAfterSeconds(player.LastNameChangedAt, now);
+
+        if (retryAfterSeconds > 0)
+        {
+            return new NameChangeResult(false, player.Name, retryAfterSeconds);
+        }
+
+        player.Name = displayName;
+        player.LastNameChangedAt = now;
+        return new NameChangeResult(true, player.Name, 0);
+    }
+
     private static string GetEndpointKey(IPEndPoint endpoint)
     {
         return $"endpoint:{endpoint.Address}:{endpoint.Port}";
@@ -718,17 +760,7 @@ internal sealed class BasicUdpGameServer : IDisposable
         return builder.ToString();
     }
 
-    private static string SanitizeName(string name)
-    {
-        var trimmed = name.Trim();
-
-        if (trimmed.Length == 0)
-        {
-            return "Player";
-        }
-
-        return trimmed.Length > 16 ? trimmed[..16] : trimmed;
-    }
+    private static string SanitizeName(string name) => RealtimeTextPolicy.SanitizeDisplayName(name);
 
     private static long ParseAcknowledgedVoxelEditSequence(string[] parts, int index)
     {
@@ -809,7 +841,7 @@ internal sealed class BasicUdpGameServer : IDisposable
     {
         public required int Id { get; init; }
         public required IPEndPoint Endpoint { get; set; }
-        public required string Name { get; init; }
+        public required string Name { get; set; }
         public HashSet<int> SeenVoxelEditClientSequences { get; } = new();
         public float X { get; set; }
         public float Y { get; set; }
@@ -818,13 +850,26 @@ internal sealed class BasicUdpGameServer : IDisposable
         public bool UsesTrustedClientPosition { get; set; }
         public long LastVoxelEditAcknowledged { get; set; }
         public DateTimeOffset LastSeen { get; set; }
+        public DateTimeOffset? LastNameChangedAt { get; set; }
     }
 }
+
+internal readonly record struct PlayerNameDto(int PlayerId, string DisplayName);
+
+internal readonly record struct NameChangeResult(bool Ok, string DisplayName, int RetryAfterSeconds);
+
+internal readonly record struct ChatMessageDto(
+    long Sequence,
+    int PlayerId,
+    string DisplayName,
+    string Text,
+    long SentAtUnixMs);
 
 internal sealed class RtcSignalingHub : IDisposable
 {
     private const int ReceiveBufferBytes = 4096;
     private const int MaxTextMessageBytes = 256 * 1024;
+    private const int MaxRecentChatMessages = 50;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
@@ -833,6 +878,8 @@ internal sealed class RtcSignalingHub : IDisposable
     private readonly RtcSignalingOptions _options;
     private readonly ConcurrentDictionary<int, RtcClientConnection> _clientsByPlayerId = new();
     private readonly ConcurrentDictionary<int, RtcMediaState> _mediaStateByPlayerId = new();
+    private readonly RecentChatBuffer _chatHistory = new(MaxRecentChatMessages);
+    private long _nextChatSequence;
 
     public RtcSignalingHub(RtcSignalingOptions options)
     {
@@ -880,8 +927,11 @@ internal sealed class RtcSignalingHub : IDisposable
                 playerId,
                 iceServers = _options.CreateIceServers(DateTimeOffset.UtcNow)
             }, cancellationToken);
+            await SendChatHistoryAsync(connection, cancellationToken);
+            await SendPlayerNamesAsync(connection, gameServer.GetPlayerNames(), cancellationToken);
             await SendMediaStateAsync(connection, cancellationToken);
             await BroadcastMediaStateAsync(cancellationToken);
+            await BroadcastPlayerNamesAsync(gameServer.GetPlayerNames(), cancellationToken);
 
             while (webSocket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
             {
@@ -892,7 +942,7 @@ internal sealed class RtcSignalingHub : IDisposable
                     break;
                 }
 
-                await ProcessClientMessageAsync(connection, message, cancellationToken);
+                await ProcessClientMessageAsync(connection, gameServer, message, cancellationToken);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -928,6 +978,13 @@ internal sealed class RtcSignalingHub : IDisposable
         _ = BroadcastMediaStateAsync(CancellationToken.None);
     }
 
+    public Task BroadcastPlayerNamesAsync(PlayerNameDto[] players, CancellationToken cancellationToken)
+    {
+        var clients = _clientsByPlayerId.Values.ToArray();
+        var tasks = clients.Select(client => SendPlayerNamesAsync(client, players, cancellationToken));
+        return Task.WhenAll(tasks);
+    }
+
     public void Dispose()
     {
         foreach (var connection in _clientsByPlayerId.Values)
@@ -938,6 +995,7 @@ internal sealed class RtcSignalingHub : IDisposable
 
     private async Task ProcessClientMessageAsync(
         RtcClientConnection connection,
+        BasicUdpGameServer gameServer,
         string message,
         CancellationToken cancellationToken)
     {
@@ -988,7 +1046,81 @@ internal sealed class RtcSignalingHub : IDisposable
                     payload
                 }, cancellationToken);
                 break;
+
+            case "name-change":
+                var nameResult = gameServer.TryChangePlayerDisplayName(
+                    connection.PlayerId,
+                    GetString(root, "displayName"),
+                    DateTimeOffset.UtcNow);
+                await SendJsonAsync(connection, new
+                {
+                    type = "name-result",
+                    ok = nameResult.Ok,
+                    displayName = nameResult.DisplayName,
+                    retryAfterSeconds = nameResult.RetryAfterSeconds
+                }, cancellationToken);
+
+                if (nameResult.Ok)
+                {
+                    await BroadcastPlayerNamesAsync(gameServer.GetPlayerNames(), cancellationToken);
+                }
+
+                break;
+
+            case "chat":
+                var text = RealtimeTextPolicy.SanitizeChatText(GetString(root, "text"));
+
+                if (text.Length == 0)
+                {
+                    return;
+                }
+
+                var now = DateTimeOffset.UtcNow;
+                var chatMessage = new ChatMessageDto(
+                    Interlocked.Increment(ref _nextChatSequence),
+                    connection.PlayerId,
+                    gameServer.GetPlayerDisplayName(connection.PlayerId),
+                    text,
+                    now.ToUnixTimeMilliseconds());
+                _chatHistory.Add(chatMessage);
+                await BroadcastChatAsync(chatMessage, cancellationToken);
+                break;
         }
+    }
+
+    private async Task BroadcastChatAsync(ChatMessageDto message, CancellationToken cancellationToken)
+    {
+        var clients = _clientsByPlayerId.Values.ToArray();
+
+        foreach (var client in clients)
+        {
+            await SendJsonAsync(client, new
+            {
+                type = "chat",
+                message
+            }, cancellationToken);
+        }
+    }
+
+    private Task SendChatHistoryAsync(RtcClientConnection connection, CancellationToken cancellationToken)
+    {
+        return SendJsonAsync(connection, new
+        {
+            type = "chat-history",
+            messages = _chatHistory.GetSnapshot()
+        }, cancellationToken);
+    }
+
+    private static Task SendPlayerNamesAsync(
+        RtcClientConnection connection,
+        PlayerNameDto[] players,
+        CancellationToken cancellationToken)
+    {
+        return SendJsonAsync(connection, new
+        {
+            type = "player-names",
+            players
+        }, cancellationToken);
     }
 
     private async Task BroadcastMediaStateAsync(CancellationToken cancellationToken)
@@ -1231,6 +1363,114 @@ internal sealed class RtcSignalingOptions
 }
 
 internal sealed record RtcIceServerDto(string[] Urls, string Username, string Credential);
+
+internal static class RealtimeTextPolicy
+{
+    public const int MaxDisplayNameLength = 16;
+    public const int MaxChatTextLength = 160;
+    public static readonly TimeSpan NameChangeCooldown = TimeSpan.FromSeconds(60);
+
+    public static string SanitizeDisplayName(string? value)
+    {
+        var sanitized = SanitizeHumanText(value, MaxDisplayNameLength);
+        return sanitized.Length == 0 ? "Player" : sanitized;
+    }
+
+    public static string SanitizeChatText(string? value)
+    {
+        return SanitizeHumanText(value, MaxChatTextLength);
+    }
+
+    public static int GetNameChangeRetryAfterSeconds(DateTimeOffset? lastChangedAt, DateTimeOffset now)
+    {
+        if (lastChangedAt == null)
+        {
+            return 0;
+        }
+
+        var elapsed = now - lastChangedAt.Value;
+
+        if (elapsed >= NameChangeCooldown)
+        {
+            return 0;
+        }
+
+        return Math.Max(1, (int)Math.Ceiling((NameChangeCooldown - elapsed).TotalSeconds));
+    }
+
+    private static string SanitizeHumanText(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(maxLength);
+        var previousWasWhitespace = true;
+
+        foreach (var character in value.Trim())
+        {
+            if (char.IsWhiteSpace(character))
+            {
+                if (!previousWasWhitespace && builder.Length < maxLength)
+                {
+                    builder.Append(' ');
+                    previousWasWhitespace = true;
+                }
+
+                continue;
+            }
+
+            if (char.IsControl(character))
+            {
+                continue;
+            }
+
+            builder.Append(character);
+            previousWasWhitespace = false;
+
+            if (builder.Length >= maxLength)
+            {
+                break;
+            }
+        }
+
+        return builder.ToString().Trim();
+    }
+}
+
+internal sealed class RecentChatBuffer
+{
+    private readonly int _capacity;
+    private readonly Queue<ChatMessageDto> _messages = new();
+    private readonly object _lock = new();
+
+    public RecentChatBuffer(int capacity)
+    {
+        _capacity = Math.Max(1, capacity);
+    }
+
+    public void Add(ChatMessageDto message)
+    {
+        lock (_lock)
+        {
+            _messages.Enqueue(message);
+
+            while (_messages.Count > _capacity)
+            {
+                _messages.Dequeue();
+            }
+        }
+    }
+
+    public ChatMessageDto[] GetSnapshot()
+    {
+        lock (_lock)
+        {
+            return _messages.ToArray();
+        }
+    }
+}
 
 internal static class JsonDefaults
 {

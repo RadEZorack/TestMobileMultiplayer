@@ -55,6 +55,11 @@ namespace BasicMultiplayer
         public event Action<int, int, bool> RemoteVideoLayoutReceived;
         public event Action<int, AudioStreamTrack> RemoteAudioReceived;
         public event Action<int> RemotePeerClosed;
+        public event Action<NameResultMessage> NameResultReceived;
+        public event Action<PlayerNameMessage[]> PlayerNamesReceived;
+        public event Action<ChatMessage[]> ChatHistoryReceived;
+        public event Action<ChatMessage> ChatReceived;
+        public bool IsSignalingReady => _webSocket != null && _webSocket.State == WebSocketState.Open;
 
         private void Awake()
         {
@@ -264,26 +269,71 @@ namespace BasicMultiplayer
 
         private void HandleSignalingMessage(string message)
         {
-            var serverMessage = JsonUtility.FromJson<ServerMessage>(message);
+            var envelope = JsonUtility.FromJson<ServerMessageEnvelope>(message);
 
-            switch (serverMessage.type)
+            switch (envelope.type)
             {
                 case "config":
-                    ApplyRtcConfig(serverMessage.iceServers);
+                    var configMessage = JsonUtility.FromJson<ConfigServerMessage>(message);
+                    ApplyRtcConfig(configMessage.iceServers);
                     break;
 
                 case "media-state":
-                    ApplyMediaState(serverMessage.players);
+                    var mediaStateMessage = JsonUtility.FromJson<MediaStateServerMessage>(message);
+                    ApplyMediaState(mediaStateMessage.players);
                     break;
 
                 case "signal":
-                    HandlePeerSignal(serverMessage.from, serverMessage.payload);
+                    var signalMessage = JsonUtility.FromJson<SignalServerMessage>(message);
+                    HandlePeerSignal(signalMessage.from, signalMessage.payload);
+                    break;
+
+                case "name-result":
+                    NameResultReceived?.Invoke(JsonUtility.FromJson<NameResultMessage>(message));
+                    break;
+
+                case "player-names":
+                    var playerNamesMessage = JsonUtility.FromJson<PlayerNamesServerMessage>(message);
+                    PlayerNamesReceived?.Invoke(playerNamesMessage.players ?? Array.Empty<PlayerNameMessage>());
+                    break;
+
+                case "chat-history":
+                    var chatHistoryMessage = JsonUtility.FromJson<ChatHistoryServerMessage>(message);
+                    ChatHistoryReceived?.Invoke(chatHistoryMessage.messages ?? Array.Empty<ChatMessage>());
+                    break;
+
+                case "chat":
+                    var chatMessage = JsonUtility.FromJson<ChatServerMessage>(message);
+
+                    if (chatMessage.message != null)
+                    {
+                        ChatReceived?.Invoke(chatMessage.message);
+                    }
+
                     break;
 
                 case "closed":
                     ResetSignalingState();
                     break;
             }
+        }
+
+        public Task SendDisplayNameChangeAsync(string displayName)
+        {
+            return SendClientMessageAsync(new ClientMessage
+            {
+                type = "name-change",
+                displayName = DeviceDisplayNameStore.Sanitize(displayName)
+            }, _lifetimeCancellation.Token);
+        }
+
+        public Task SendChatAsync(string text)
+        {
+            return SendClientMessageAsync(new ClientMessage
+            {
+                type = "chat",
+                text = text ?? string.Empty
+            }, _lifetimeCancellation.Token);
         }
 
         private void ApplyRtcConfig(IceServerMessage[] iceServers)
@@ -988,18 +1038,85 @@ namespace BasicMultiplayer
             public int videoRotation;
             public bool videoMirrored;
             public int to;
+            public string displayName;
+            public string text;
             public SignalPayload payload;
         }
 
         [Serializable]
-        private sealed class ServerMessage
+        private sealed class ServerMessageEnvelope
+        {
+            public string type;
+        }
+
+        [Serializable]
+        private sealed class ConfigServerMessage
         {
             public string type;
             public int playerId;
             public IceServerMessage[] iceServers;
+        }
+
+        [Serializable]
+        private sealed class MediaStateServerMessage
+        {
+            public string type;
             public MediaStatePlayerMessage[] players;
+        }
+
+        [Serializable]
+        private sealed class SignalServerMessage
+        {
+            public string type;
             public int from;
             public SignalPayload payload;
+        }
+
+        [Serializable]
+        private sealed class PlayerNamesServerMessage
+        {
+            public string type;
+            public PlayerNameMessage[] players;
+        }
+
+        [Serializable]
+        private sealed class ChatHistoryServerMessage
+        {
+            public string type;
+            public ChatMessage[] messages;
+        }
+
+        [Serializable]
+        private sealed class ChatServerMessage
+        {
+            public string type;
+            public ChatMessage message;
+        }
+
+        [Serializable]
+        public sealed class NameResultMessage
+        {
+            public string type;
+            public bool ok;
+            public string displayName;
+            public int retryAfterSeconds;
+        }
+
+        [Serializable]
+        public sealed class PlayerNameMessage
+        {
+            public int playerId;
+            public string displayName;
+        }
+
+        [Serializable]
+        public sealed class ChatMessage
+        {
+            public long sequence;
+            public int playerId;
+            public string displayName;
+            public string text;
+            public long sentAtUnixMs;
         }
 
         [Serializable]

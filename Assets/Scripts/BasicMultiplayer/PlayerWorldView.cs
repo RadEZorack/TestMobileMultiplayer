@@ -10,11 +10,13 @@ namespace BasicMultiplayer
 
         [SerializeField] private UdpGameClient client;
         [SerializeField] private VoxelPlayMultiplayerDemo voxelPlayDemo;
+        [SerializeField] private WebRtcPeerMediaClient realtimeClient;
         [SerializeField] private float climbSpeedBlocksPerSecond = 3.25f;
         [SerializeField] private float fallSpeedBlocksPerSecond = 12f;
 
         private readonly Dictionary<int, Transform> _avatars = new();
         private readonly Dictionary<int, float> _displayedFootYByPlayer = new();
+        private readonly Dictionary<int, string> _displayNamesByPlayerId = new();
         private Material _remoteMaterial;
 
         private void Awake()
@@ -29,7 +31,28 @@ namespace BasicMultiplayer
                 voxelPlayDemo = GetComponent<VoxelPlayMultiplayerDemo>();
             }
 
+            if (realtimeClient == null)
+            {
+                realtimeClient = GetComponent<WebRtcPeerMediaClient>();
+            }
+
             _remoteMaterial = BasicMultiplayerMaterials.Create(new Color(1f, 0.64f, 0.15f));
+        }
+
+        private void OnEnable()
+        {
+            if (realtimeClient != null)
+            {
+                realtimeClient.PlayerNamesReceived += HandlePlayerNames;
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (realtimeClient != null)
+            {
+                realtimeClient.PlayerNamesReceived -= HandlePlayerNames;
+            }
         }
 
         public bool TryGetAvatarTransform(int playerId, out Transform avatar)
@@ -111,8 +134,41 @@ namespace BasicMultiplayer
             textMesh.alignment = TextAlignment.Center;
             textMesh.characterSize = 0.22f;
             textMesh.color = Color.white;
+            SetAvatarLabel(avatar.transform, id);
 
             return avatar.transform;
+        }
+
+        private void HandlePlayerNames(WebRtcPeerMediaClient.PlayerNameMessage[] players)
+        {
+            _displayNamesByPlayerId.Clear();
+
+            if (players != null)
+            {
+                foreach (var player in players)
+                {
+                    _displayNamesByPlayerId[player.playerId] = DeviceDisplayNameStore.Sanitize(player.displayName);
+                }
+            }
+
+            foreach (var pair in _avatars)
+            {
+                SetAvatarLabel(pair.Value, pair.Key);
+            }
+        }
+
+        private void SetAvatarLabel(Transform avatar, int playerId)
+        {
+            var label = avatar.Find("Label");
+
+            if (label == null || !label.TryGetComponent<TextMesh>(out var textMesh))
+            {
+                return;
+            }
+
+            textMesh.text = _displayNamesByPlayerId.TryGetValue(playerId, out var displayName)
+                ? displayName
+                : playerId.ToString();
         }
 
         private static void SetAvatarVisible(Transform avatar, bool isVisible)
