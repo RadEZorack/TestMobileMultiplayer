@@ -50,11 +50,24 @@ TURN_STATIC_AUTH_SECRET=change_me
 TURN_MIN_PORT=49160
 TURN_MAX_PORT=49200
 APPLE_CLIENT_ID=com.Unity-Technologies.com.unity.template.urp-blank
+GOOGLE_CLIENT_ID=REPLACE_WITH_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com
 ```
 
 Use `APP_DOMAIN=prod.augmego.ca` or another host name for a different environment. Set real database and TURN secrets before putting the stack on a public droplet. If `.env` is missing, compose defaults to the dev values in `docker-compose.yml`.
 
 `APPLE_CLIENT_ID` must match the iOS bundle identifier configured for Sign in with Apple. The current project default is still Unity's template bundle id; change it before using real Apple auth in TestFlight/App Store builds.
+
+`GOOGLE_CLIENT_ID` must be the Google OAuth **Web application** client id used as the server client id by Android Credential Manager. Put the same value in `Assets/Resources/AugmegoAuthConfig.json` so Android builds can request a Google ID token for that backend audience.
+
+For Android Google sign-in setup:
+
+1. In Google Cloud Console, create or select an OAuth consent screen.
+2. Create an Android OAuth client for the Unity Android package id and signing certificate SHA-1.
+3. Create a Web application OAuth client.
+4. Copy the Web client id into `.env` as `GOOGLE_CLIENT_ID`.
+5. Copy that same Web client id into `Assets/Resources/AugmegoAuthConfig.json`.
+
+The current Android package id is still Unity's template id, `com.UnityTechnologies.com.unity.template.urpblank`; change it before creating production OAuth credentials.
 
 For WSS, place your certificate files at:
 
@@ -74,7 +87,7 @@ For public WebRTC relay, open TCP/UDP `3478` and UDP `49160-49200` on the host f
 
 On first launch, `GameAuthClient` signs in as a guest through `/auth/guest`, stores a refresh token locally, then gives `UdpGameClient` an auth-issued game session id. The server rejects unauthenticated `HELLO2`/`INPUT2`/`EDIT2` session ids, so clients now wait for guest auth before UDP gameplay connects.
 
-Guest players see a small `Save` button. On iOS player builds, tapping it starts Sign in with Apple, verifies the Apple identity token on the server, and links that Apple identity to the current guest account. In the Editor and non-iOS builds, the button is a placeholder until Google Play Games and Steam providers are added.
+Guest players see a small `Save` button. On iOS player builds, tapping it starts Sign in with Apple. On Android player builds, tapping it starts Sign in with Google through Credential Manager. The server verifies the provider identity token and links that identity to the current guest account. In the Editor and desktop builds, the button logs that provider sign-in is only available on device builds.
 
 The connection overlay is hidden by default. For manual host/port testing, enable `showConnectionOverlay` on the `UdpGameClient` component in the Inspector.
 

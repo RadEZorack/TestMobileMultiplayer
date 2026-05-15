@@ -30,6 +30,7 @@ services:
       TURN_REALM: ${TURN_REALM:-${APP_DOMAIN:-dev.augmego.ca}}
       TURN_STATIC_AUTH_SECRET: ${TURN_STATIC_AUTH_SECRET:-change_me}
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-com.Unity-Technologies.com.unity.template.urp-blank}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     depends_on:
       postgres:
         condition: service_healthy

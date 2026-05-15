@@ -23,6 +23,7 @@ namespace BasicMultiplayer
         [SerializeField] private bool useHttps = true;
         [SerializeField] private int directHttpPort = 8080;
         [SerializeField] private string httpBaseUrlOverride;
+        [SerializeField] private string googleServerClientId;
 
         private string _status = "Signing in";
         private bool _isReady;
@@ -109,8 +110,29 @@ namespace BasicMultiplayer
                     _status = $"Apple sign-in failed: {error}";
                     Debug.LogWarning(_status);
                 });
+#elif UNITY_ANDROID && !UNITY_EDITOR
+            var resolvedGoogleClientId = GetGoogleServerClientId();
+
+            if (string.IsNullOrWhiteSpace(resolvedGoogleClientId))
+            {
+                _status = "Google sign-in missing Web client ID";
+                Debug.LogWarning(_status);
+                return;
+            }
+
+            _isSigningIn = true;
+            _status = "Google sign-in starting";
+            GoogleSignInBridge.SignIn(
+                resolvedGoogleClientId,
+                credential => StartCoroutine(SignInWithGoogleCoroutine(credential)),
+                error =>
+                {
+                    _isSigningIn = false;
+                    _status = $"Google sign-in failed: {error}";
+                    Debug.LogWarning(_status);
+                });
 #else
-            _status = "Apple sign-in is available on iOS builds first";
+            _status = "Apple/Google sign-in is available on device builds first";
             Debug.Log(_status);
 #endif
         }
@@ -180,6 +202,25 @@ namespace BasicMultiplayer
             };
 
             yield return PostAuthCoroutine("/auth/apple", request, _accessToken);
+            _isSigningIn = false;
+        }
+
+        private IEnumerator SignInWithGoogleCoroutine(GoogleSignInBridge.Credential credential)
+        {
+            _isSigningIn = true;
+            var googleDisplayName = FirstNonEmpty(credential.DisplayName, credential.Email);
+            var debugLabel = FirstNonEmpty(credential.DisplayName, credential.Email, credential.UserId, "Google user");
+            _status = $"Saving progress for {debugLabel}";
+            Debug.Log($"Google credential received for: {debugLabel}");
+
+            var request = new GoogleAuthRequest
+            {
+                idToken = credential.IdToken,
+                platform = GetPlatformName(),
+                displayName = googleDisplayName
+            };
+
+            yield return PostAuthCoroutine("/auth/google", request, _accessToken);
             _isSigningIn = false;
         }
 
@@ -292,6 +333,42 @@ namespace BasicMultiplayer
             return useHttps
                 ? $"https://{host}{path}"
                 : $"http://{host}:{directHttpPort}{path}";
+        }
+
+        private string GetGoogleServerClientId()
+        {
+            var configuredClientId = FirstNonEmpty(
+                googleServerClientId,
+                LoadAuthConfig()?.googleServerClientId);
+
+            return IsPlaceholderClientId(configuredClientId) ? string.Empty : configuredClientId;
+        }
+
+        private static bool IsPlaceholderClientId(string value)
+        {
+            return string.IsNullOrWhiteSpace(value)
+                || value.Contains("REPLACE", StringComparison.OrdinalIgnoreCase)
+                || value.Contains("YOUR_", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static AuthConfig LoadAuthConfig()
+        {
+            var configAsset = Resources.Load<TextAsset>("AugmegoAuthConfig");
+
+            if (configAsset == null || string.IsNullOrWhiteSpace(configAsset.text))
+            {
+                return null;
+            }
+
+            try
+            {
+                return JsonUtility.FromJson<AuthConfig>(configAsset.text);
+            }
+            catch (ArgumentException)
+            {
+                Debug.LogWarning("Auth config could not be parsed from Resources/AugmegoAuthConfig.json.");
+                return null;
+            }
         }
 
         private static string GetOrCreateInstallId()
@@ -445,9 +522,23 @@ namespace BasicMultiplayer
         }
 
         [Serializable]
+        private sealed class GoogleAuthRequest
+        {
+            public string idToken;
+            public string platform;
+            public string displayName;
+        }
+
+        [Serializable]
         private sealed class AppleIdTokenPayload
         {
             public string email;
+        }
+
+        [Serializable]
+        private sealed class AuthConfig
+        {
+            public string googleServerClientId;
         }
 
         [Serializable]

@@ -49,7 +49,10 @@ var persistedVoxelEdits = await voxelEditStore.LoadVoxelEditsAsync(shutdown.Toke
 
 await using var accountStore = new PostgresAccountStore(databaseConnectionString);
 await accountStore.InitializeAsync(shutdown.Token);
-using var authService = new GameAuthService(accountStore, AppleAuthOptions.FromEnvironment());
+using var authService = new GameAuthService(
+    accountStore,
+    AppleAuthOptions.FromEnvironment(),
+    GoogleAuthOptions.FromEnvironment());
 using var signalingHub = new RtcSignalingHub(RtcSignalingOptions.FromEnvironment());
 using var server = new BasicUdpGameServer(port, voxelEditStore, persistedVoxelEdits, signalingHub, authService);
 await using var webApp = CreateWebApplication(httpPort, signalingHub, server, authService);
@@ -117,6 +120,24 @@ static WebApplication CreateWebApplication(
             context.Request.Headers.Authorization.ToString(),
             context.RequestAborted);
         var result = await authService.SignInWithAppleAsync(request, currentAccountId, context.RequestAborted);
+
+        return result.IsSuccess
+            ? Results.Json(result.Response, JsonDefaults.Options)
+            : Results.BadRequest(new AuthErrorResponse(result.ErrorCode, result.ErrorMessage));
+    });
+    app.MapPost("/auth/google", async (HttpContext context) =>
+    {
+        var request = await ReadJsonBodyAsync<GoogleAuthRequest>(context, context.RequestAborted);
+
+        if (request == null || string.IsNullOrWhiteSpace(request.idToken))
+        {
+            return Results.BadRequest(new AuthErrorResponse("invalid_request", "idToken is required."));
+        }
+
+        var currentAccountId = await authService.TryGetAccountIdFromAuthorizationHeaderAsync(
+            context.Request.Headers.Authorization.ToString(),
+            context.RequestAborted);
+        var result = await authService.SignInWithGoogleAsync(request, currentAccountId, context.RequestAborted);
 
         return result.IsSuccess
             ? Results.Json(result.Response, JsonDefaults.Options)
@@ -1225,13 +1246,18 @@ internal sealed class GameAuthService : IDisposable
     private static readonly TimeSpan AccessTokenLifetime = TimeSpan.FromHours(6);
     private readonly PostgresAccountStore _store;
     private readonly AppleTokenVerifier _appleTokenVerifier;
+    private readonly GoogleTokenVerifier _googleTokenVerifier;
     private readonly ConcurrentDictionary<string, AuthSession> _activeGameSessionsById = new();
     private readonly ConcurrentDictionary<string, AuthSession> _activeAccessTokens = new();
 
-    public GameAuthService(PostgresAccountStore store, AppleAuthOptions appleAuthOptions)
+    public GameAuthService(
+        PostgresAccountStore store,
+        AppleAuthOptions appleAuthOptions,
+        GoogleAuthOptions googleAuthOptions)
     {
         _store = store;
         _appleTokenVerifier = new AppleTokenVerifier(appleAuthOptions);
+        _googleTokenVerifier = new GoogleTokenVerifier(googleAuthOptions);
     }
 
     public async Task<AuthResponse> SignInGuestAsync(GuestAuthRequest request, CancellationToken cancellationToken)
@@ -1306,6 +1332,50 @@ internal sealed class GameAuthService : IDisposable
         return AuthResult.Succeeded(await IssueTokensAsync(accountId, request.platform, cancellationToken));
     }
 
+    public async Task<AuthResult> SignInWithGoogleAsync(
+        GoogleAuthRequest request,
+        Guid? currentAccountId,
+        CancellationToken cancellationToken)
+    {
+        GoogleIdentity googleIdentity;
+
+        try
+        {
+            googleIdentity = await _googleTokenVerifier.VerifyAsync(request.idToken, cancellationToken);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return AuthResult.Failed("google_not_configured", exception.Message);
+        }
+        catch (Exception exception) when (exception is JsonException || exception is CryptographicException || exception is FormatException)
+        {
+            return AuthResult.Failed("invalid_google_token", "Google identity token could not be verified.");
+        }
+
+        var googleDisplayName = SanitizeDisplayName(
+            FirstNonEmpty(request.displayName, googleIdentity.DisplayName, googleIdentity.Email),
+            null);
+        var existingAccountId = await _store.GetIdentityAccountAsync("google", googleIdentity.Subject, cancellationToken);
+        var accountId = existingAccountId
+            ?? currentAccountId
+            ?? await _store.CreateAccountAsync(
+                googleDisplayName ?? "Player",
+                isGuest: false,
+                cancellationToken);
+
+        await _store.MarkAccountSavedAsync(accountId, googleDisplayName, cancellationToken);
+        await _store.UpsertIdentityAsync(
+            accountId,
+            "google",
+            googleIdentity.Subject,
+            googleIdentity.Email,
+            googleIdentity.EmailVerified,
+            googleDisplayName,
+            cancellationToken);
+
+        return AuthResult.Succeeded(await IssueTokensAsync(accountId, request.platform, cancellationToken));
+    }
+
     public bool IsGameSessionActive(string gameSessionId)
     {
         if (string.IsNullOrWhiteSpace(gameSessionId))
@@ -1354,6 +1424,7 @@ internal sealed class GameAuthService : IDisposable
     public void Dispose()
     {
         _appleTokenVerifier.Dispose();
+        _googleTokenVerifier.Dispose();
     }
 
     private async Task<AuthResponse> IssueTokensAsync(Guid accountId, string? platform, CancellationToken cancellationToken)
@@ -1441,6 +1512,19 @@ internal sealed class GameAuthService : IDisposable
 
         var trimmed = value.Trim();
         return trimmed.Length > 32 ? trimmed[..32] : trimmed;
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return string.Empty;
     }
 }
 
@@ -1671,8 +1755,8 @@ internal sealed class PostgresAccountStore : IAsyncDisposable
                 CASE
                     WHEN accounts.display_name IN ('Guest', 'Player')
                     THEN COALESCE(
-                        NULLIF(apple_identity.display_name, ''),
-                        NULLIF(apple_identity.email, ''),
+                        NULLIF(saved_identity.display_name, ''),
+                        NULLIF(saved_identity.email, ''),
                         accounts.display_name)
                     ELSE accounts.display_name
                 END AS display_name,
@@ -1681,10 +1765,10 @@ internal sealed class PostgresAccountStore : IAsyncDisposable
             LEFT JOIN LATERAL (
                 SELECT display_name, email
                 FROM account_identities
-                WHERE account_id = accounts.id AND provider = 'apple'
+                WHERE account_id = accounts.id AND provider IN ('apple', 'google')
                 ORDER BY last_login_at DESC
                 LIMIT 1
-            ) apple_identity ON true
+            ) saved_identity ON true
             WHERE accounts.id = @account_id AND accounts.merged_into_account_id IS NULL;
             """,
             connection);
@@ -1907,6 +1991,205 @@ internal sealed class AppleJwk
 
 internal sealed record AppleIdentity(string Subject, string? Email, bool EmailVerified);
 
+internal sealed class GoogleTokenVerifier : IDisposable
+{
+    private readonly GoogleAuthOptions _options;
+    private readonly HttpClient _httpClient = new();
+    private GoogleJwkSet? _cachedKeys;
+    private DateTimeOffset _cachedKeysUntil;
+
+    public GoogleTokenVerifier(GoogleAuthOptions options)
+    {
+        _options = options;
+    }
+
+    public async Task<GoogleIdentity> VerifyAsync(string idToken, CancellationToken cancellationToken)
+    {
+        if (_options.AllowedAudiences.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "Google auth is not configured. Set GOOGLE_CLIENT_ID to the Web OAuth client id used by Android Sign in with Google.");
+        }
+
+        var parts = idToken.Split('.');
+
+        if (parts.Length != 3)
+        {
+            throw new FormatException("Google id token is not a compact JWT.");
+        }
+
+        using var headerDocument = JsonDocument.Parse(TokenEncoding.Base64UrlDecode(parts[0]));
+        using var payloadDocument = JsonDocument.Parse(TokenEncoding.Base64UrlDecode(parts[1]));
+        var header = headerDocument.RootElement;
+        var payload = payloadDocument.RootElement;
+        var kid = GetJsonString(header, "kid");
+        var alg = GetJsonString(header, "alg");
+
+        if (alg != "RS256" || string.IsNullOrWhiteSpace(kid))
+        {
+            throw new CryptographicException("Google id token uses an unsupported signing key.");
+        }
+
+        var keys = await GetGoogleKeysAsync(cancellationToken);
+        var key = keys.Keys.FirstOrDefault(candidate => candidate.Kid == kid && candidate.Kty == "RSA");
+
+        if (key == null)
+        {
+            _cachedKeys = null;
+            keys = await GetGoogleKeysAsync(cancellationToken);
+            key = keys.Keys.FirstOrDefault(candidate => candidate.Kid == kid && candidate.Kty == "RSA")
+                ?? throw new CryptographicException("Google signing key was not found.");
+        }
+
+        using var rsa = RSA.Create();
+        rsa.ImportParameters(new RSAParameters
+        {
+            Modulus = TokenEncoding.Base64UrlDecode(key.N),
+            Exponent = TokenEncoding.Base64UrlDecode(key.E)
+        });
+
+        var signedBytes = Encoding.ASCII.GetBytes($"{parts[0]}.{parts[1]}");
+        var signatureBytes = TokenEncoding.Base64UrlDecode(parts[2]);
+
+        if (!rsa.VerifyData(signedBytes, signatureBytes, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))
+        {
+            throw new CryptographicException("Google id token signature is invalid.");
+        }
+
+        var issuer = GetJsonString(payload, "iss");
+        var subject = GetJsonString(payload, "sub");
+        var audience = GetJsonString(payload, "aud");
+        var expiresAt = DateTimeOffset.FromUnixTimeSeconds(GetJsonLong(payload, "exp"));
+
+        if (issuer is not ("accounts.google.com" or "https://accounts.google.com")
+            || string.IsNullOrWhiteSpace(subject)
+            || !_options.AllowedAudiences.Contains(audience)
+            || expiresAt <= DateTimeOffset.UtcNow.AddMinutes(-1))
+        {
+            throw new CryptographicException("Google id token claims are invalid.");
+        }
+
+        return new GoogleIdentity(
+            subject,
+            GetJsonString(payload, "email"),
+            GetJsonBool(payload, "email_verified"),
+            GetJsonString(payload, "name"));
+    }
+
+    public void Dispose()
+    {
+        _httpClient.Dispose();
+    }
+
+    private async Task<GoogleJwkSet> GetGoogleKeysAsync(CancellationToken cancellationToken)
+    {
+        if (_cachedKeys != null && _cachedKeysUntil > DateTimeOffset.UtcNow)
+        {
+            return _cachedKeys;
+        }
+
+        using var response = await _httpClient.GetAsync("https://www.googleapis.com/oauth2/v3/certs", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        _cachedKeys = await JsonSerializer.DeserializeAsync<GoogleJwkSet>(stream, JsonDefaults.Options, cancellationToken)
+            ?? throw new JsonException("Google JWK response was empty.");
+
+        var maxAge = response.Headers.CacheControl?.MaxAge ?? TimeSpan.FromHours(1);
+        _cachedKeysUntil = DateTimeOffset.UtcNow.Add(maxAge);
+        return _cachedKeys;
+    }
+
+    private static string GetJsonString(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return string.Empty;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.String => property.GetString() ?? string.Empty,
+            JsonValueKind.Array => property.EnumerateArray()
+                .FirstOrDefault(item => item.ValueKind == JsonValueKind.String)
+                .GetString() ?? string.Empty,
+            _ => string.Empty
+        };
+    }
+
+    private static bool GetJsonBool(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return false;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String => string.Equals(property.GetString(), "true", StringComparison.OrdinalIgnoreCase),
+            _ => false
+        };
+    }
+
+    private static long GetJsonLong(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var property)
+            && property.TryGetInt64(out var value)
+            ? value
+            : 0;
+    }
+}
+
+internal sealed class GoogleAuthOptions
+{
+    public GoogleAuthOptions(IReadOnlySet<string> allowedAudiences)
+    {
+        AllowedAudiences = allowedAudiences;
+    }
+
+    public IReadOnlySet<string> AllowedAudiences { get; }
+
+    public static GoogleAuthOptions FromEnvironment()
+    {
+        var audiences = FirstNonEmpty(
+                Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID"),
+                Environment.GetEnvironmentVariable("GOOGLE_WEB_CLIENT_ID"))
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return new GoogleAuthOptions(audiences);
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return string.Empty;
+    }
+}
+
+internal sealed class GoogleJwkSet
+{
+    public GoogleJwk[] Keys { get; set; } = [];
+}
+
+internal sealed class GoogleJwk
+{
+    public string Kid { get; set; } = string.Empty;
+    public string Kty { get; set; } = string.Empty;
+    public string N { get; set; } = string.Empty;
+    public string E { get; set; } = string.Empty;
+}
+
+internal sealed record GoogleIdentity(string Subject, string? Email, bool EmailVerified, string? DisplayName);
+
 internal sealed class AuthResult
 {
     private AuthResult(AuthResponse? response, string errorCode, string errorMessage)
@@ -1946,6 +2229,13 @@ internal sealed class RefreshAuthRequest
 }
 
 internal sealed class AppleAuthRequest
+{
+    public string idToken { get; set; } = string.Empty;
+    public string? platform { get; set; }
+    public string? displayName { get; set; }
+}
+
+internal sealed class GoogleAuthRequest
 {
     public string idToken { get; set; } = string.Empty;
     public string? platform { get; set; }
