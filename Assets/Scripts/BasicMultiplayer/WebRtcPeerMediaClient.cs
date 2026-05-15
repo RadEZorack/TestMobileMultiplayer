@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Unity.WebRTC;
 using UnityEngine;
+using UnityEngine.Experimental.Rendering;
 
 namespace BasicMultiplayer
 {
@@ -36,6 +37,7 @@ namespace BasicMultiplayer
         private ClientWebSocket _webSocket;
         private RTCIceServer[] _iceServers = Array.Empty<RTCIceServer>();
         private WebCamTexture _webCamTexture;
+        private Texture2D _localVideoTexture;
         private VideoStreamTrack _localVideoTrack;
         private AudioStreamTrack _localAudioTrack;
         private AudioSource _microphoneSource;
@@ -48,6 +50,7 @@ namespace BasicMultiplayer
         private bool _wantsPublishing;
         private bool _isPublishing;
         private bool _startingPublishing;
+        private bool _localVideoCopyFailedLogged;
         private int _localVideoRotationDegrees;
         private bool _localVideoVerticallyMirrored;
 
@@ -88,6 +91,7 @@ namespace BasicMultiplayer
 
             if (_isPublishing)
             {
+                UpdateLocalVideoTexture();
                 RefreshLocalVideoLayout();
             }
         }
@@ -524,7 +528,14 @@ namespace BasicMultiplayer
                 yield break;
             }
 
-            _localVideoTrack = new VideoStreamTrack(_webCamTexture);
+            if (!TryCreateLocalVideoTrack(deviceName))
+            {
+                _webCamTexture.Stop();
+                Destroy(_webCamTexture);
+                _webCamTexture = null;
+                yield break;
+            }
+
             RefreshLocalVideoLayout(forceBroadcast: false);
         }
 
@@ -867,6 +878,14 @@ namespace BasicMultiplayer
             _localVideoTrack?.Dispose();
             _localVideoTrack = null;
 
+            if (_localVideoTexture != null)
+            {
+                Destroy(_localVideoTexture);
+                _localVideoTexture = null;
+            }
+
+            _localVideoCopyFailedLogged = false;
+
             _localAudioTrack?.Dispose();
             _localAudioTrack = null;
 
@@ -890,6 +909,85 @@ namespace BasicMultiplayer
             }
 
             _microphoneClip = null;
+        }
+
+        private bool TryCreateLocalVideoTrack(string deviceName)
+        {
+            try
+            {
+                _localVideoTrack = new VideoStreamTrack(_webCamTexture);
+                Debug.Log($"AV camera started: '{deviceName}' direct texture {_webCamTexture.width}x{_webCamTexture.height}.");
+                return true;
+            }
+            catch (ArgumentException exception)
+            {
+                Debug.LogWarning($"AV camera direct texture unsupported, trying compatible texture: {exception.Message}");
+            }
+
+            try
+            {
+                var supportedFormat = WebRTC.GetSupportedGraphicsFormat(SystemInfo.graphicsDeviceType);
+                _localVideoTexture = new Texture2D(
+                    _webCamTexture.width,
+                    _webCamTexture.height,
+                    supportedFormat,
+                    TextureCreationFlags.None)
+                {
+                    name = "Augmego WebRTC Camera Texture"
+                };
+                _localVideoCopyFailedLogged = false;
+
+                if (!UpdateLocalVideoTexture(force: true))
+                {
+                    throw new InvalidOperationException("Graphics.ConvertTexture could not copy the camera frame.");
+                }
+
+                _localVideoTrack = new VideoStreamTrack(_localVideoTexture);
+                Debug.Log($"AV camera started: '{deviceName}' via compatible {supportedFormat} texture {_webCamTexture.width}x{_webCamTexture.height}.");
+                return true;
+            }
+            catch (Exception exception) when (exception is ArgumentException || exception is InvalidOperationException)
+            {
+                Debug.LogWarning($"AV camera start failed: compatible texture could not be created. {exception.Message}");
+                _localVideoTrack?.Dispose();
+                _localVideoTrack = null;
+
+                if (_localVideoTexture != null)
+                {
+                    Destroy(_localVideoTexture);
+                    _localVideoTexture = null;
+                }
+
+                _localVideoCopyFailedLogged = false;
+
+                return false;
+            }
+        }
+
+        private bool UpdateLocalVideoTexture(bool force = false)
+        {
+            if (_webCamTexture == null || _localVideoTexture == null)
+            {
+                return false;
+            }
+
+            if (!force && !_webCamTexture.didUpdateThisFrame)
+            {
+                return true;
+            }
+
+            if (Graphics.ConvertTexture(_webCamTexture, _localVideoTexture))
+            {
+                return true;
+            }
+
+            if (!_localVideoCopyFailedLogged)
+            {
+                _localVideoCopyFailedLogged = true;
+                Debug.LogWarning("AV camera compatible texture copy failed; local video may not publish on this graphics backend.");
+            }
+
+            return false;
         }
 
         private void RefreshLocalVideoLayout(bool forceBroadcast = true)
