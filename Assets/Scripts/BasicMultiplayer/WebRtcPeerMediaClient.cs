@@ -19,11 +19,16 @@ namespace BasicMultiplayer
         private const int RequestedCameraFps = 15;
         private const int MicrophoneSampleRate = 48000;
         private const float AvButtonSize = 72f;
+        private const float LocalPreviewMaxSize = 156f;
+        private const float LocalPreviewBottomMargin = 34f;
+        private const float LocalPreviewPadding = 3f;
         private const float CameraStartTimeoutSeconds = 5f;
         private const float MicrophoneStartTimeoutSeconds = 3f;
 
         [SerializeField] private UdpGameClient client;
-        [SerializeField] private bool showAvButton = true;
+        [SerializeField] private bool enableWebRtcMedia = false;
+        [SerializeField] private bool showAvButton = false;
+        [SerializeField] private bool showLocalPreview = false;
         [SerializeField] private bool useSecureWebSocket = true;
         [SerializeField] private int directWebSocketPort = 8080;
         [SerializeField] private string webSocketUrlOverride;
@@ -38,6 +43,11 @@ namespace BasicMultiplayer
         private RTCIceServer[] _iceServers = Array.Empty<RTCIceServer>();
         private WebCamTexture _webCamTexture;
         private Texture2D _localVideoTexture;
+        private Texture2D _localPreviewTexture;
+        private Color32[] _localVideoPixels;
+        private byte[] _localVideoUploadBytes;
+        private GraphicsFormat _localVideoGraphicsFormat;
+        private Coroutine _localVideoCopyCoroutine;
         private VideoStreamTrack _localVideoTrack;
         private AudioStreamTrack _localAudioTrack;
         private AudioSource _microphoneSource;
@@ -51,6 +61,8 @@ namespace BasicMultiplayer
         private bool _isPublishing;
         private bool _startingPublishing;
         private bool _localVideoCopyFailedLogged;
+        private int _localVideoUploadedFrameCount;
+        private int _localVideoAverageLuma;
         private int _localVideoRotationDegrees;
         private bool _localVideoVerticallyMirrored;
 
@@ -76,7 +88,10 @@ namespace BasicMultiplayer
 
         private void Start()
         {
-            StartCoroutine(WebRTC.Update());
+            if (enableWebRtcMedia)
+            {
+                StartCoroutine(WebRTC.Update());
+            }
         }
 
         private void Update()
@@ -84,21 +99,25 @@ namespace BasicMultiplayer
             DrainSignalingMessages();
             EnsureSignalingConnection();
 
-            if (_wantsPublishing && !_isPublishing && !_startingPublishing)
+            if (enableWebRtcMedia && _wantsPublishing && !_isPublishing && !_startingPublishing)
             {
                 StartCoroutine(StartPublishingCoroutine());
             }
 
-            if (_isPublishing)
+            if (enableWebRtcMedia && _isPublishing)
             {
-                UpdateLocalVideoTexture();
                 RefreshLocalVideoLayout();
             }
         }
 
         private void OnGUI()
         {
-            if (!showAvButton)
+            if (!enableWebRtcMedia)
+            {
+                return;
+            }
+
+            if (!showAvButton && !showLocalPreview)
             {
                 return;
             }
@@ -108,11 +127,19 @@ namespace BasicMultiplayer
             var uiScale = GetUiScale();
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(uiScale, uiScale, 1f));
 
-            GUI.color = _isPublishing ? new Color(0.3f, 1f, 0.55f, 0.92f) : new Color(1f, 1f, 1f, 0.82f);
-
-            if (GUI.Button(GetAvButtonRect(uiScale), _isPublishing ? "AV\nON" : "AV"))
+            if (showAvButton)
             {
-                TogglePublishing();
+                GUI.color = _isPublishing ? new Color(0.3f, 1f, 0.55f, 0.92f) : new Color(1f, 1f, 1f, 0.82f);
+
+                if (GUI.Button(GetAvButtonRect(uiScale), _isPublishing ? "AV\nON" : "AV"))
+                {
+                    TogglePublishing();
+                }
+            }
+
+            if (showLocalPreview)
+            {
+                DrawLocalPreview(uiScale);
             }
 
             GUI.color = previousColor;
@@ -121,7 +148,11 @@ namespace BasicMultiplayer
 
         private void OnDestroy()
         {
-            _ = SendMediaEnabledAsync(false);
+            if (enableWebRtcMedia && _isPublishing)
+            {
+                _ = SendMediaEnabledAsync(false);
+            }
+
             _lifetimeCancellation.Cancel();
             CloseAllPeers();
             StopLocalMedia();
@@ -133,6 +164,11 @@ namespace BasicMultiplayer
 
         private void TogglePublishing()
         {
+            if (!enableWebRtcMedia)
+            {
+                return;
+            }
+
             if (_isPublishing || _wantsPublishing)
             {
                 _wantsPublishing = false;
@@ -206,7 +242,7 @@ namespace BasicMultiplayer
                     playerId = playerId
                 }, cancellationToken);
 
-                _status = "AV signaling ready";
+                _status = enableWebRtcMedia ? "AV signaling ready" : "Realtime ready";
                 _ = ReceiveSignalingLoopAsync(socket, cancellationToken);
             }
             catch (Exception exception) when (exception is WebSocketException
@@ -283,11 +319,21 @@ namespace BasicMultiplayer
                     break;
 
                 case "media-state":
+                    if (!enableWebRtcMedia)
+                    {
+                        break;
+                    }
+
                     var mediaStateMessage = JsonUtility.FromJson<MediaStateServerMessage>(message);
                     ApplyMediaState(mediaStateMessage.players);
                     break;
 
                 case "signal":
+                    if (!enableWebRtcMedia)
+                    {
+                        break;
+                    }
+
                     var signalMessage = JsonUtility.FromJson<SignalServerMessage>(message);
                     HandlePeerSignal(signalMessage.from, signalMessage.payload);
                     break;
@@ -342,6 +388,14 @@ namespace BasicMultiplayer
 
         private void ApplyRtcConfig(IceServerMessage[] iceServers)
         {
+            if (!enableWebRtcMedia)
+            {
+                _iceServers = Array.Empty<RTCIceServer>();
+                _hasRtcConfig = false;
+                CloseAllPeers();
+                return;
+            }
+
             if (iceServers == null || iceServers.Length == 0)
             {
                 _iceServers = Array.Empty<RTCIceServer>();
@@ -380,6 +434,14 @@ namespace BasicMultiplayer
 
         private void ApplyMediaState(MediaStatePlayerMessage[] players)
         {
+            if (!enableWebRtcMedia)
+            {
+                _remoteMediaEnabledByPlayerId.Clear();
+                _remoteVideoLayoutsByPlayerId.Clear();
+                CloseAllPeers();
+                return;
+            }
+
             _remoteMediaEnabledByPlayerId.Clear();
             _remoteVideoLayoutsByPlayerId.Clear();
 
@@ -404,7 +466,7 @@ namespace BasicMultiplayer
 
         private void RefreshPeerConnections()
         {
-            if (!_isPublishing || !_hasRtcConfig || client == null || client.LocalPlayerId == 0)
+            if (!enableWebRtcMedia || !_isPublishing || !_hasRtcConfig || client == null || client.LocalPlayerId == 0)
             {
                 return;
             }
@@ -438,6 +500,11 @@ namespace BasicMultiplayer
 
         private IEnumerator StartPublishingCoroutine()
         {
+            if (!enableWebRtcMedia)
+            {
+                yield break;
+            }
+
             _startingPublishing = true;
             IosWebRtcAudioSession.Configure();
 
@@ -528,7 +595,9 @@ namespace BasicMultiplayer
                 yield break;
             }
 
-            if (!TryCreateLocalVideoTrack(deviceName))
+            yield return CreateLocalVideoTrackCoroutine(deviceName);
+
+            if (_localVideoTrack == null)
             {
                 _webCamTexture.Stop();
                 Destroy(_webCamTexture);
@@ -660,7 +729,7 @@ namespace BasicMultiplayer
 
         private void HandlePeerSignal(int remotePlayerId, SignalPayload payload)
         {
-            if (!_isPublishing || payload == null || remotePlayerId == 0)
+            if (!enableWebRtcMedia || !_isPublishing || payload == null || remotePlayerId == 0)
             {
                 return;
             }
@@ -875,6 +944,7 @@ namespace BasicMultiplayer
 
         private void StopLocalMedia()
         {
+            StopLocalVideoCopy();
             _localVideoTrack?.Dispose();
             _localVideoTrack = null;
 
@@ -884,7 +954,17 @@ namespace BasicMultiplayer
                 _localVideoTexture = null;
             }
 
+            if (_localPreviewTexture != null)
+            {
+                Destroy(_localPreviewTexture);
+                _localPreviewTexture = null;
+            }
+
+            _localVideoPixels = null;
+            _localVideoUploadBytes = null;
             _localVideoCopyFailedLogged = false;
+            _localVideoUploadedFrameCount = 0;
+            _localVideoAverageLuma = 0;
 
             _localAudioTrack?.Dispose();
             _localAudioTrack = null;
@@ -911,22 +991,81 @@ namespace BasicMultiplayer
             _microphoneClip = null;
         }
 
-        private bool TryCreateLocalVideoTrack(string deviceName)
+        private IEnumerator CreateLocalVideoTrackCoroutine(string deviceName)
         {
+            var directTrackCreated = false;
+
             try
             {
                 _localVideoTrack = new VideoStreamTrack(_webCamTexture);
+                TryCreateLocalPreviewTexture();
+                StartLocalVideoCopy();
                 Debug.Log($"AV camera started: '{deviceName}' direct texture {_webCamTexture.width}x{_webCamTexture.height}.");
-                return true;
+                directTrackCreated = true;
             }
             catch (ArgumentException exception)
             {
                 Debug.LogWarning($"AV camera direct texture unsupported, trying compatible texture: {exception.Message}");
             }
 
+            if (directTrackCreated)
+            {
+                yield break;
+            }
+
+            var supportedFormat = WebRTC.GetSupportedGraphicsFormat(SystemInfo.graphicsDeviceType);
+            if (!TryCreateLocalVideoTexture(supportedFormat))
+            {
+                yield break;
+            }
+
+            var timeoutAt = Time.realtimeSinceStartup + CameraStartTimeoutSeconds;
+            var waitForEndOfFrame = new WaitForEndOfFrame();
+            var hasUploadedFrame = false;
+
+            while (_wantsPublishing && Time.realtimeSinceStartup < timeoutAt)
+            {
+                if (UpdateLocalVideoTexture(force: true))
+                {
+                    hasUploadedFrame = true;
+                    break;
+                }
+
+                yield return waitForEndOfFrame;
+            }
+
+            if (!_wantsPublishing)
+            {
+                yield break;
+            }
+
+            if (!hasUploadedFrame)
+            {
+                Debug.LogWarning("AV camera start failed: CPU camera texture did not receive a readable frame before timeout.");
+                ClearLocalVideoTextureState();
+                yield break;
+            }
+
             try
             {
-                var supportedFormat = WebRTC.GetSupportedGraphicsFormat(SystemInfo.graphicsDeviceType);
+                _localVideoTrack = new VideoStreamTrack(_localVideoTexture, CopyLocalVideoTextureForWebRtc);
+                StartLocalVideoCopy();
+                Debug.Log($"AV camera started: '{deviceName}' via CPU-compatible {supportedFormat} texture {_webCamTexture.width}x{_webCamTexture.height} with custom sender copy.");
+            }
+            catch (Exception exception) when (exception is ArgumentException || exception is InvalidOperationException || exception is UnityException)
+            {
+                Debug.LogWarning($"AV camera start failed: compatible texture could not be created. {exception.Message}");
+                _localVideoTrack?.Dispose();
+                _localVideoTrack = null;
+                ClearLocalVideoTextureState();
+            }
+        }
+
+        private bool TryCreateLocalVideoTexture(GraphicsFormat supportedFormat)
+        {
+            try
+            {
+                _localVideoGraphicsFormat = supportedFormat;
                 _localVideoTexture = new Texture2D(
                     _webCamTexture.width,
                     _webCamTexture.height,
@@ -935,38 +1074,145 @@ namespace BasicMultiplayer
                 {
                     name = "Augmego WebRTC Camera Texture"
                 };
+                _localVideoTexture.filterMode = FilterMode.Point;
+                _localVideoTexture.wrapMode = TextureWrapMode.Clamp;
                 _localVideoCopyFailedLogged = false;
 
-                if (!UpdateLocalVideoTexture(force: true))
+                if (!TryCreateLocalPreviewTexture())
                 {
-                    throw new InvalidOperationException("Graphics.ConvertTexture could not copy the camera frame.");
+                    Debug.LogWarning("AV camera start failed: local camera frame buffer could not be created.");
+                    ClearLocalVideoTextureState();
+                    return false;
                 }
 
-                _localVideoTrack = new VideoStreamTrack(_localVideoTexture);
-                Debug.Log($"AV camera started: '{deviceName}' via compatible {supportedFormat} texture {_webCamTexture.width}x{_webCamTexture.height}.");
+                _localVideoUploadBytes = new byte[_localVideoPixels.Length * 4];
                 return true;
             }
-            catch (Exception exception) when (exception is ArgumentException || exception is InvalidOperationException)
+            catch (Exception exception) when (exception is ArgumentException || exception is InvalidOperationException || exception is UnityException)
             {
                 Debug.LogWarning($"AV camera start failed: compatible texture could not be created. {exception.Message}");
-                _localVideoTrack?.Dispose();
-                _localVideoTrack = null;
-
-                if (_localVideoTexture != null)
-                {
-                    Destroy(_localVideoTexture);
-                    _localVideoTexture = null;
-                }
-
-                _localVideoCopyFailedLogged = false;
-
+                ClearLocalVideoTextureState();
                 return false;
             }
         }
 
+        private bool TryCreateLocalPreviewTexture()
+        {
+            if (_webCamTexture == null)
+            {
+                return false;
+            }
+
+            if (_webCamTexture.width <= 16 || _webCamTexture.height <= 16)
+            {
+                return false;
+            }
+
+            var pixelCount = _webCamTexture.width * _webCamTexture.height;
+
+            if (_localVideoPixels == null || _localVideoPixels.Length != pixelCount)
+            {
+                _localVideoPixels = new Color32[pixelCount];
+            }
+
+            if (_localPreviewTexture != null
+                && _localPreviewTexture.width == _webCamTexture.width
+                && _localPreviewTexture.height == _webCamTexture.height)
+            {
+                return true;
+            }
+
+            if (_localPreviewTexture != null)
+            {
+                Destroy(_localPreviewTexture);
+                _localPreviewTexture = null;
+            }
+
+            try
+            {
+                _localPreviewTexture = new Texture2D(
+                    _webCamTexture.width,
+                    _webCamTexture.height,
+                    TextureFormat.ARGB32,
+                    mipChain: false)
+                {
+                    name = "Augmego Local Camera Preview Texture"
+                };
+                _localPreviewTexture.filterMode = FilterMode.Point;
+                _localPreviewTexture.wrapMode = TextureWrapMode.Clamp;
+                return true;
+            }
+            catch (Exception exception) when (exception is ArgumentException || exception is InvalidOperationException || exception is UnityException)
+            {
+                Debug.LogWarning($"AV local preview texture could not be created. {exception.Message}");
+                _localPreviewTexture = null;
+                return false;
+            }
+        }
+
+        private void ClearLocalVideoTextureState()
+        {
+            if (_localVideoTexture != null)
+            {
+                Destroy(_localVideoTexture);
+                _localVideoTexture = null;
+            }
+
+            if (_localPreviewTexture != null)
+            {
+                Destroy(_localPreviewTexture);
+                _localPreviewTexture = null;
+            }
+
+            _localVideoPixels = null;
+            _localVideoUploadBytes = null;
+            _localVideoCopyFailedLogged = false;
+            _localVideoUploadedFrameCount = 0;
+            _localVideoAverageLuma = 0;
+        }
+
+        private IEnumerator CopyLocalVideoFramesCoroutine()
+        {
+            var waitForEndOfFrame = new WaitForEndOfFrame();
+
+            while (_webCamTexture != null && (_localVideoTexture != null || _localPreviewTexture != null))
+            {
+                yield return waitForEndOfFrame;
+                UpdateLocalVideoTexture(force: true);
+            }
+
+            _localVideoCopyCoroutine = null;
+        }
+
+        private void StartLocalVideoCopy()
+        {
+            if (_localVideoCopyCoroutine != null)
+            {
+                return;
+            }
+
+            if (_localPreviewTexture == null && _localVideoTexture == null)
+            {
+                return;
+            }
+
+            _localVideoCopyCoroutine = StartCoroutine(CopyLocalVideoFramesCoroutine());
+        }
+
+        private void StopLocalVideoCopy()
+        {
+            if (_localVideoCopyCoroutine == null)
+            {
+                return;
+            }
+
+            StopCoroutine(_localVideoCopyCoroutine);
+            _localVideoCopyCoroutine = null;
+        }
+
         private bool UpdateLocalVideoTexture(bool force = false)
         {
-            if (_webCamTexture == null || _localVideoTexture == null)
+            if (_webCamTexture == null || (_localVideoTexture == null && _localPreviewTexture == null))
             {
                 return false;
             }
@@ -976,18 +1222,110 @@ namespace BasicMultiplayer
                 return true;
             }
 
-            if (Graphics.ConvertTexture(_webCamTexture, _localVideoTexture))
+            try
             {
+                _localVideoPixels = _webCamTexture.GetPixels32(_localVideoPixels);
+
+                if (_localVideoPixels == null || _localVideoPixels.Length == 0)
+                {
+                    return false;
+                }
+
+                if (_localVideoTexture != null
+                    && (_localVideoUploadBytes == null || _localVideoUploadBytes.Length != _localVideoPixels.Length * 4))
+                {
+                    _localVideoUploadBytes = new byte[_localVideoPixels.Length * 4];
+                }
+
+                CopyLocalVideoPixelsToTextures();
+
+                if (_localVideoTexture != null)
+                {
+                    _localVideoTexture.SetPixelData(_localVideoUploadBytes, 0);
+                    _localVideoTexture.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+                }
+
+                if (_localPreviewTexture != null)
+                {
+                    _localPreviewTexture.SetPixels32(_localVideoPixels);
+                    _localPreviewTexture.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+                }
+
+                _localVideoUploadedFrameCount++;
+
+                if (_localVideoUploadedFrameCount == 1)
+                {
+                    var textureWidth = _localVideoTexture != null ? _localVideoTexture.width : _localPreviewTexture.width;
+                    var textureHeight = _localVideoTexture != null ? _localVideoTexture.height : _localPreviewTexture.height;
+                    var textureKind = _localVideoTexture != null ? _localVideoGraphicsFormat.ToString() : "preview";
+                    Debug.Log(
+                        $"AV camera CPU texture received first frame: {textureKind} " +
+                        $"{textureWidth}x{textureHeight}, luma {_localVideoAverageLuma}.");
+                }
+
                 return true;
             }
-
-            if (!_localVideoCopyFailedLogged)
+            catch (Exception exception) when (exception is ArgumentException || exception is InvalidOperationException || exception is UnityException)
             {
-                _localVideoCopyFailedLogged = true;
-                Debug.LogWarning("AV camera compatible texture copy failed; local video may not publish on this graphics backend.");
+                if (!_localVideoCopyFailedLogged)
+                {
+                    _localVideoCopyFailedLogged = true;
+                    Debug.LogWarning($"AV camera CPU texture copy failed; local video may not publish on this graphics backend. {exception.Message}");
+                }
+
+                return false;
+            }
+        }
+
+        private void CopyLocalVideoPixelsToTextures()
+        {
+            if (_localVideoPixels == null)
+            {
+                return;
             }
 
-            return false;
+            var shouldUpdateSendTexture = _localVideoTexture != null && _localVideoUploadBytes != null;
+            var useBgra = _localVideoGraphicsFormat == GraphicsFormat.B8G8R8A8_SRGB
+                || _localVideoGraphicsFormat == GraphicsFormat.B8G8R8A8_UNorm;
+            long lumaSum = 0;
+
+            for (var pixelIndex = 0; pixelIndex < _localVideoPixels.Length; pixelIndex++)
+            {
+                var pixel = _localVideoPixels[pixelIndex];
+                var byteIndex = pixelIndex * 4;
+                pixel.a = 255;
+                _localVideoPixels[pixelIndex] = pixel;
+                lumaSum += pixel.r + pixel.g + pixel.b;
+
+                if (!shouldUpdateSendTexture)
+                {
+                    continue;
+                }
+
+                if (useBgra)
+                {
+                    _localVideoUploadBytes[byteIndex] = pixel.b;
+                    _localVideoUploadBytes[byteIndex + 1] = pixel.g;
+                    _localVideoUploadBytes[byteIndex + 2] = pixel.r;
+                    _localVideoUploadBytes[byteIndex + 3] = 255;
+                }
+                else
+                {
+                    _localVideoUploadBytes[byteIndex] = pixel.r;
+                    _localVideoUploadBytes[byteIndex + 1] = pixel.g;
+                    _localVideoUploadBytes[byteIndex + 2] = pixel.b;
+                    _localVideoUploadBytes[byteIndex + 3] = 255;
+                }
+            }
+
+            _localVideoAverageLuma = _localVideoPixels.Length > 0
+                ? Mathf.Clamp((int)(lumaSum / (_localVideoPixels.Length * 3L)), 0, 255)
+                : 0;
+        }
+
+        private static void CopyLocalVideoTextureForWebRtc(Texture source, RenderTexture destination)
+        {
+            Graphics.Blit(source, destination);
         }
 
         private void RefreshLocalVideoLayout(bool forceBroadcast = true)
@@ -1107,6 +1445,148 @@ namespace BasicMultiplayer
             rotationDegrees = 0;
             mirrored = false;
             return false;
+        }
+
+        private void DrawLocalPreview(float uiScale)
+        {
+            if (!_isPublishing && !_startingPublishing && _webCamTexture == null)
+            {
+                return;
+            }
+
+            var texture = GetLocalPreviewTexture();
+            var rotation = NormalizeVideoRotation(_localVideoRotationDegrees);
+            var rect = GetLocalPreviewRect(uiScale, texture, rotation);
+            var frameRect = new Rect(
+                rect.x - LocalPreviewPadding,
+                rect.y - LocalPreviewPadding,
+                rect.width + LocalPreviewPadding * 2f,
+                rect.height + LocalPreviewPadding * 2f);
+
+            GUI.color = new Color(0f, 0f, 0f, 0.78f);
+            GUI.DrawTexture(frameRect, Texture2D.whiteTexture);
+
+            if (texture != null)
+            {
+                GUI.color = Color.white;
+                DrawRotatedPreviewTexture(rect, texture, rotation, _localVideoVerticallyMirrored);
+            }
+
+            DrawLocalPreviewLumaSwatch(frameRect);
+            DrawLocalPreviewDebugLabel(frameRect, texture);
+        }
+
+        private void DrawLocalPreviewLumaSwatch(Rect frameRect)
+        {
+            var swatchSize = 18f;
+            var swatchRect = new Rect(
+                frameRect.xMax - swatchSize - 5f,
+                frameRect.y + 4f,
+                swatchSize,
+                swatchSize);
+            var luma = Mathf.Clamp01(_localVideoAverageLuma / 255f);
+            GUI.color = new Color(luma, luma, luma, 1f);
+            GUI.DrawTexture(swatchRect, Texture2D.whiteTexture);
+        }
+
+        private void DrawLocalPreviewDebugLabel(Rect frameRect, Texture texture)
+        {
+            var labelRect = new Rect(frameRect.x + 5f, frameRect.y + 4f, frameRect.width - 32f, 18f);
+            var textureName = texture == _webCamTexture
+                ? "cam"
+                : texture == _localPreviewTexture
+                    ? "rgba"
+                    : texture == _localVideoTexture
+                        ? "send"
+                        : "none";
+            var text = $"CAM {textureName} {_localVideoUploadedFrameCount} L{_localVideoAverageLuma}";
+            var previousAlignment = GUI.skin.label.alignment;
+            var previousFontSize = GUI.skin.label.fontSize;
+            GUI.skin.label.alignment = TextAnchor.MiddleLeft;
+            GUI.skin.label.fontSize = 10;
+            GUI.color = new Color(0f, 0f, 0f, 0.72f);
+            GUI.DrawTexture(labelRect, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            GUI.Label(labelRect, text);
+            GUI.skin.label.alignment = previousAlignment;
+            GUI.skin.label.fontSize = previousFontSize;
+        }
+
+        private Texture GetLocalPreviewTexture()
+        {
+            if (_localPreviewTexture != null && _localVideoUploadedFrameCount > 0)
+            {
+                return _localPreviewTexture;
+            }
+
+            if (_webCamTexture != null
+                && _webCamTexture.isPlaying
+                && _webCamTexture.width > 16
+                && _webCamTexture.height > 16)
+            {
+                return _webCamTexture;
+            }
+
+            if (_localVideoTexture != null)
+            {
+                return _localVideoTexture;
+            }
+
+            return _webCamTexture;
+        }
+
+        private static Rect GetLocalPreviewRect(float uiScale, Texture texture, int rotationDegrees)
+        {
+            var safeArea = Screen.safeArea;
+            var screenWidth = Screen.width / uiScale;
+            var screenHeight = Screen.height / uiScale;
+            var bottomInset = safeArea.yMin / uiScale;
+            var sourceWidth = Mathf.Max(1f, texture != null ? texture.width : RequestedCameraWidth);
+            var sourceHeight = Mathf.Max(1f, texture != null ? texture.height : RequestedCameraHeight);
+
+            if (rotationDegrees == 90 || rotationDegrees == 270)
+            {
+                var swappedWidth = sourceHeight;
+                sourceHeight = sourceWidth;
+                sourceWidth = swappedWidth;
+            }
+
+            var aspect = sourceWidth / sourceHeight;
+            var width = LocalPreviewMaxSize;
+            var height = width / aspect;
+
+            if (height > LocalPreviewMaxSize)
+            {
+                height = LocalPreviewMaxSize;
+                width = height * aspect;
+            }
+
+            return new Rect(
+                (screenWidth - width) * 0.5f,
+                screenHeight - bottomInset - height - LocalPreviewBottomMargin,
+                width,
+                height);
+        }
+
+        private static void DrawRotatedPreviewTexture(Rect rect, Texture texture, int rotationDegrees, bool mirrored)
+        {
+            var previousMatrix = GUI.matrix;
+            var pivot = rect.center;
+            var texCoords = mirrored ? new Rect(1f, 0f, -1f, 1f) : new Rect(0f, 0f, 1f, 1f);
+            var sourceRect = rect;
+
+            if (rotationDegrees == 90 || rotationDegrees == 270)
+            {
+                sourceRect = new Rect(
+                    pivot.x - rect.height * 0.5f,
+                    pivot.y - rect.width * 0.5f,
+                    rect.height,
+                    rect.width);
+            }
+
+            GUIUtility.RotateAroundPivot(-rotationDegrees, pivot);
+            GUI.DrawTextureWithTexCoords(sourceRect, texture, texCoords, alphaBlend: false);
+            GUI.matrix = previousMatrix;
         }
 
         private static float GetUiScale()

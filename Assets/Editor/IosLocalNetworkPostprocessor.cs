@@ -6,6 +6,8 @@ using UnityEditor.iOS.Xcode;
 
 public static class IosLocalNetworkPostprocessor
 {
+    private const bool IncludeWebRtcMediaPermissions = false;
+
     [PostProcessBuild]
     public static void AddLocalNetworkPermission(BuildTarget target, string pathToBuiltProject)
     {
@@ -21,12 +23,16 @@ public static class IosLocalNetworkPostprocessor
         plist.root.SetString(
             "NSLocalNetworkUsageDescription",
             "This game connects to a multiplayer server on your local network.");
-        plist.root.SetString(
-            "NSCameraUsageDescription",
-            "This game can show your camera feed above your multiplayer avatar.");
-        plist.root.SetString(
-            "NSMicrophoneUsageDescription",
-            "This game can share your microphone audio with nearby multiplayer peers.");
+
+        if (IncludeWebRtcMediaPermissions)
+        {
+            plist.root.SetString(
+                "NSCameraUsageDescription",
+                "This game can show your camera feed above your multiplayer avatar.");
+            plist.root.SetString(
+                "NSMicrophoneUsageDescription",
+                "This game can share your microphone audio with nearby multiplayer peers.");
+        }
 
         plist.WriteToFile(plistPath);
 

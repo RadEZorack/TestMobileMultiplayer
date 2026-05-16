@@ -24,7 +24,9 @@ namespace BasicMultiplayer
             root.AddComponent<PlayerWorldView>();
             root.AddComponent<VoxelPlayMultiplayerDemo>();
             root.AddComponent<WebRtcPeerMediaClient>();
-            root.AddComponent<PeerMediaBillboardView>();
+            // WebRTC media is disabled for the Android-first MVP. Keep PeerMediaBillboardView
+            // available in the codebase, but do not attach it to new prototype scenes by default.
+            // root.AddComponent<PeerMediaBillboardView>();
             root.AddComponent<WorldChatView>();
 
             EnsureCamera();
